@@ -1,0 +1,322 @@
+#include <Arduino.h>
+#include <WiFi.h>
+#include <ESPAsyncWebServer.h>
+#include <BLEDevice.h>
+#include <BLEServer.h>
+#include <BLEUtils.h>
+#include <BLE2902.h>
+#include <FS.h>
+#include <LittleFS.h> 
+#include <ArduinoJson.h>
+#include <Heltec-EInk-Modules.h>
+
+// --- LOGO BITMAP (64x64) ---
+#define logo_width 64
+#define logo_height 64
+static const unsigned char logo_bits[] = {
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3e, 0x7c, 0x00, 0x00, 0x00, 
+  0x00, 0x00, 0x00, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0xff, 
+  0xff, 0x01, 0x00, 0x00, 0x00, 0x00, 0xc0, 0xff, 0xff, 0x03, 0x00, 0x00, 
+  0x00, 0x00, 0xe0, 0xff, 0xff, 0x07, 0x00, 0x00, 0x00, 0x00, 0xf0, 0xff, 
+  0xff, 0x0f, 0x00, 0x00, 0x00, 0x00, 0xf0, 0xff, 0xff, 0x0f, 0x00, 0x00, 
+  0x00, 0x00, 0xf0, 0xff, 0xff, 0x0f, 0x00, 0x00, 0x00, 0x00, 0xe0, 0xff, 
+  0xff, 0x07, 0x00, 0x00, 0x00, 0x00, 0xc0, 0xff, 0xff, 0x03, 0x00, 0x00, 
+  0x00, 0x00, 0x80, 0xff, 0xff, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 
+  0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3e, 0x7c, 0x00, 0x00, 0x00, 
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf8, 0xff, 0xff, 0x1f, 0x00, 0x00, 
+  0x00, 0x00, 0xfe, 0xff, 0xff, 0x7f, 0x00, 0x00, 0x00, 0xc0, 0xff, 0xff, 
+  0xff, 0xff, 0x03, 0x00, 0x00, 0xe0, 0xff, 0xff, 0xff, 0xff, 0x07, 0x00, 
+  0x00, 0xf0, 0xff, 0xff, 0xff, 0xff, 0x0f, 0x00, 0x00, 0xf8, 0xff, 0xff, 
+  0xff, 0xff, 0x1f, 0x00, 0x00, 0xfc, 0xff, 0x07, 0xe0, 0xff, 0x3f, 0x00, 
+  0x00, 0xfe, 0xff, 0x03, 0xc0, 0xff, 0x7f, 0x00, 0x00, 0xfe, 0xff, 0x01, 
+  0x80, 0xff, 0x7f, 0x00, 0x00, 0xff, 0xff, 0x01, 0x80, 0xff, 0xff, 0x00, 
+  0x80, 0xff, 0xff, 0x00, 0x00, 0xff, 0xff, 0x01, 0xc0, 0xff, 0xff, 0x00, 
+  0x00, 0xff, 0xff, 0x03, 0xe0, 0xff, 0xff, 0x07, 0x00, 0xff, 0xff, 0x00, 
+  0x00, 0xff, 0xff, 0x01, 0xc0, 0xff, 0xff, 0x00, 0x00, 0xff, 0xff, 0x01, 
+  0x80, 0xff, 0xff, 0x00, 0x00, 0xfe, 0xff, 0x01, 0x80, 0xff, 0x7f, 0x00, 
+  0x00, 0xfe, 0xff, 0x03, 0xc0, 0xff, 0x7f, 0x00, 0x00, 0xfc, 0xff, 0x03, 
+  0xc0, 0xff, 0x3f, 0x00, 0x00, 0xf8, 0xff, 0x07, 0xe0, 0xff, 0x1f, 0x00, 
+  0x00, 0xf0, 0xff, 0x07, 0xe0, 0xff, 0x0f, 0x00, 0x00, 0xe0, 0xff, 0x0f, 0xf0, 0xff, 0x07, 0x00, 
+  0x00, 0xc0, 0xff, 0x1f, 0xf8, 0xff, 0x03, 0x00, 0x00, 0x80, 0xff, 0x3f, 
+  0xfc, 0xff, 0x01, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 
+  0x00, 0x00, 0xfe, 0xff, 0xff, 0x7f, 0x00, 0x00, 0x00, 0x00, 0xfc, 0xff, 
+  0xff, 0x3f, 0x00, 0x00, 0x00, 0x00, 0xf0, 0xff, 0xff, 0x0f, 0x00, 0x00, 
+  0x00, 0x00, 0xc0, 0xff, 0xff, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+};
+
+// --- PIN DEFINITIONS (Heltec Vision Master E290) ---
+#define BUTTON_UP    1
+#define BUTTON_SEL   2
+#define BUTTON_DOWN  3
+#define BATT_ADC     10
+
+// --- BLE UUIDS ---
+#define SERVICE_UUID           "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
+#define UPLOAD_CHAR_UUID       "beb5483e-36e1-4688-b7f5-ea07361b26a8"
+#define LIST_CHAR_UUID         "beb5483e-36e1-4688-b7f5-ea07361b26a9"
+#define DELETE_CHAR_UUID       "beb5483e-36e1-4688-b7f5-ea07361b26aa"
+
+// --- DISPLAY SETUP ---
+EInkDisplay_VisionMasterE290 display;
+
+// --- GLOBAL STATE ---
+enum AppState { MENU, READING, LIBRARY, BOOKMARKS, WIFI_MODE, BLE_MODE, SETTINGS, QUICK_MENU, OFF_STATE };
+AppState currentState = MENU;
+
+struct Config {
+  int fontSize = 12;
+  int designType = 0; // 0: [], 1: (), 2: **
+  int pagesSinceFullRefresh = 0;
+  char lastBook[64] = "";
+  int lastPage = 0;
+} config;
+
+String currentBookTitle = "";
+int currentMenuIdx = 0;
+int scrollOffset = 0; // For scrolling long lists
+bool isQuickMenu = false;
+unsigned long buttonPressTime = 0;
+
+// Servers
+AsyncWebServer server(80);
+BLEServer* pServer = NULL;
+BLECharacteristic* pUploadChar = NULL;
+BLECharacteristic* pListChar = NULL;
+BLECharacteristic* pDeleteChar = NULL;
+
+// --- FILE SYSTEM HELPERS ---
+
+String listFiles() {
+  String list = "";
+  File root = LittleFS.open("/books");
+  File file = root.openNextFile();
+  while(file) {
+    if(list != "") list += ",";
+    list += String(file.name());
+    file = root.openNextFile();
+  }
+  return list;
+}
+
+// --- BLE CALLBACKS ---
+
+class UploadCallbacks: public BLECharacteristicCallbacks {
+    String buffer = "";
+    void onWrite(BLECharacteristic *pCharacteristic) {
+      std::string value = pCharacteristic->getValue();
+      if (value.length() > 0) {
+        buffer += String(value.c_str());
+        // Simple check: if buffer contains '|', we split filename and start writing
+        // For production, a more robust packet header is better
+        int sepIdx = buffer.indexOf('|');
+        if (sepIdx != -1) {
+          String fn = buffer.substring(0, sepIdx);
+          String content = buffer.substring(sepIdx + 1);
+          File f = LittleFS.open("/books/" + fn, FILE_APPEND);
+          if (f) {
+            f.print(content);
+            f.close();
+          }
+          buffer = ""; // Reset for next chunk logic or simple implementation
+        }
+      }
+    }
+};
+
+class ListCallbacks: public BLECharacteristicCallbacks {
+    void onRead(BLECharacteristic *pCharacteristic) {
+      String files = listFiles();
+      pCharacteristic->setValue(files.c_str());
+    }
+};
+
+class DeleteCallbacks: public BLECharacteristicCallbacks {
+    void onWrite(BLECharacteristic *pCharacteristic) {
+      std::string filename = pCharacteristic->getValue();
+      if (filename.length() > 0) {
+        String path = "/books/" + String(filename.c_str());
+        if (LittleFS.exists(path)) {
+          LittleFS.remove(path);
+          Serial.println("Deleted: " + path);
+        }
+      }
+    }
+};
+
+// --- UI UTILS ---
+
+String getSelector(bool left) {
+  if (config.designType == 0) return left ? "[" : "]";
+  if (config.designType == 1) return left ? "(" : ")";
+  if (config.designType == 2) return "*";
+  return "";
+}
+
+void drawStatusBar() {
+  display.setFont(ArialMT_Plain_10);
+  display.setTextAlignment(TEXT_ALIGN_LEFT);
+  display.drawString(5, 2, "12:00");
+  
+  display.setTextAlignment(TEXT_ALIGN_CENTER);
+  String pos = (currentBookTitle == "") ? "Reader" : currentBookTitle;
+  display.drawString(148, 2, pos);
+  
+  display.setTextAlignment(TEXT_ALIGN_RIGHT);
+  float raw = analogRead(BATT_ADC);
+  float voltage = (raw / 4095.0) * 2 * 3.3 * 1.1; 
+  display.drawString(290, 2, String(voltage, 1) + "V");
+  display.drawLine(0, 15, 296, 15);
+}
+
+// Optimized render with FastMode support
+void renderMenu(const char* options[], int count, bool forceFull = false) {
+  if (forceFull) {
+    display.fastmodeOff();
+    config.pagesSinceFullRefresh = 0;
+  } else {
+    display.fastmodeOn();
+  }
+
+  DRAW(display) {
+    display.clear();
+    drawStatusBar();
+    display.setFont(ArialMT_Plain_16);
+    display.setTextAlignment(TEXT_ALIGN_LEFT);
+    
+    int visibleItems = 5;
+    if (currentMenuIdx < scrollOffset) scrollOffset = currentMenuIdx;
+    if (currentMenuIdx >= scrollOffset + visibleItems) scrollOffset = currentMenuIdx - visibleItems + 1;
+
+    for (int i = 0; i < visibleItems && (i + scrollOffset) < count; i++) {
+      int idx = i + scrollOffset;
+      int y = 25 + (i * 22);
+      if (idx == currentMenuIdx) {
+        display.drawString(10, y, getSelector(true) + " " + String(options[idx]) + " " + getSelector(false));
+      } else {
+        display.drawString(25, y, options[idx]);
+      }
+    }
+  }
+}
+
+// --- CONNECTIVITY ---
+
+void startBLE() {
+  BLEDevice::init("S3-Reader-BLE");
+  pServer = BLEDevice::createServer();
+  BLEService *pService = pServer->createService(SERVICE_UUID);
+
+  pUploadChar = pService->createCharacteristic(UPLOAD_CHAR_UUID, BLECharacteristic::PROPERTY_WRITE);
+  pUploadChar->setCallbacks(new UploadCallbacks());
+
+  pListChar = pService->createCharacteristic(LIST_CHAR_UUID, BLECharacteristic::PROPERTY_READ);
+  pListChar->setCallbacks(new ListCallbacks());
+
+  pDeleteChar = pService->createCharacteristic(DELETE_CHAR_UUID, BLECharacteristic::PROPERTY_WRITE);
+  pDeleteChar->setCallbacks(new DeleteCallbacks());
+
+  pService->start();
+  BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
+  pAdvertising->addServiceUUID(SERVICE_UUID);
+  pAdvertising->setScanResponse(true);
+  BLEDevice::startAdvertising();
+}
+
+void startWiFiUpload() {
+  WiFi.softAP("Reader-WiFi", "12345678");
+  server.on("/upload", HTTP_POST, [](AsyncWebServerRequest *request) {
+    request->send(200, "text/plain", "OK");
+  }, [](AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
+    if (!index) {
+      request->_tempFile = LittleFS.open("/books/" + filename, FILE_WRITE);
+    }
+    if (request->_tempFile) request->_tempFile.write(data, len);
+    if (final && request->_tempFile) request->_tempFile.close();
+  });
+  server.begin();
+}
+
+// --- INPUT HANDLING ---
+
+void handleButtons() {
+  static bool lastUp = HIGH, lastSel = HIGH, lastDown = HIGH;
+  bool currUp = digitalRead(BUTTON_UP);
+  bool currSel = digitalRead(BUTTON_SEL);
+  bool currDown = digitalRead(BUTTON_DOWN);
+
+  const char* mainOpts[] = {"Continue", "Library", "Bookmarks", "WiFi Upload", "Settings", "Design", "Power Off"};
+  int mainCount = 7;
+
+  if (currSel == LOW && lastSel == HIGH) buttonPressTime = millis();
+  if (currSel == HIGH && lastSel == LOW) {
+    if (millis() - buttonPressTime > 1500) {
+      currentState = OFF_STATE;
+    } else {
+      if (currentMenuIdx == 3) { currentState = WIFI_MODE; startWiFiUpload(); }
+      if (currentMenuIdx == 6) currentState = OFF_STATE;
+      renderMenu(mainOpts, mainCount, true);
+    }
+  }
+
+  if (currUp == LOW && lastUp == HIGH) {
+    currentMenuIdx = (currentMenuIdx > 0) ? currentMenuIdx - 1 : mainCount - 1;
+    config.pagesSinceFullRefresh++;
+    renderMenu(mainOpts, mainCount, (config.pagesSinceFullRefresh >= 15));
+  }
+
+  if (currDown == LOW && lastDown == HIGH) {
+    currentMenuIdx = (currentMenuIdx < mainCount - 1) ? currentMenuIdx + 1 : 0;
+    config.pagesSinceFullRefresh++;
+    renderMenu(mainOpts, mainCount, (config.pagesSinceFullRefresh >= 15));
+  }
+
+  lastUp = currUp; lastSel = currSel; lastDown = currDown;
+}
+
+// --- MAIN ---
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(BUTTON_UP, INPUT_PULLUP);
+  pinMode(BUTTON_SEL, INPUT_PULLUP);
+  pinMode(BUTTON_DOWN, INPUT_PULLUP);
+  
+  display.begin();
+  display.setRotation(1);
+  
+  if (!LittleFS.begin(true)) {
+    Serial.println("LittleFS Mount Failed");
+  } else {
+    if (!LittleFS.exists("/books")) LittleFS.mkdir("/books");
+  }
+
+  startBLE(); // Always start BLE in background for management
+
+  const char* mainOpts[] = {"Continue", "Library", "Bookmarks", "WiFi Upload", "Settings", "Design", "Power Off"};
+  renderMenu(mainOpts, 7, true);
+}
+
+void loop() {
+  handleButtons();
+  
+  if (currentState == OFF_STATE) {
+    display.fastmodeOff();
+    display.clear();
+    int x = (display.width() - logo_width) / 2;
+    int y = (display.height() - logo_height) / 2 - 10;
+    DRAW(display) {
+      display.drawXBitmap(x, y, logo_bits, logo_width, logo_height, BLACK);
+      display.setFont(ArialMT_Plain_16);
+      display.setTextAlignment(TEXT_ALIGN_CENTER);
+      display.drawString(display.width() / 2, y + logo_height + 5, "Powering Off...");
+    }
+    delay(2000);
+    esp_deep_sleep_start();
+  }
+  delay(10); 
+}
