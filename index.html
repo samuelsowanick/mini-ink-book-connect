@@ -3,223 +3,377 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BLE E-Reader Manager</title>
+    <title>E-Reader Manager</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
-        body { font-family: -apple-system, sans-serif; display: flex; flex-direction: column; align-items: center; padding: 20px; background: #f4f4f9; color: #333; }
-        .card { background: white; padding: 25px; border-radius: 15px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); width: 100%; max-width: 450px; text-align: center; margin-bottom: 20px; }
-        h2 { margin-top: 0; color: #007AFF; }
-        button { background: #007AFF; color: white; border: none; padding: 12px 20px; border-radius: 8px; font-size: 14px; cursor: pointer; margin: 5px; width: calc(100% - 10px); font-weight: 600; transition: opacity 0.2s; }
-        button:disabled { background: #ccc; cursor: not-allowed; }
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            display: flex; flex-direction: column; align-items: center;
+            padding: 20px; background: #f0f2f5; color: #1a1a2e; min-height: 100vh;
+        }
+        .card {
+            background: white; padding: 28px; border-radius: 18px;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.10); width: 100%;
+            max-width: 460px; text-align: center; margin-bottom: 20px;
+        }
+        h2 { margin: 0 0 4px; color: #007AFF; font-size: 22px; }
+        .subtitle { font-size: 13px; color: #888; margin-bottom: 20px; }
+
+        button {
+            background: #007AFF; color: white; border: none;
+            padding: 13px 18px; border-radius: 10px; font-size: 14px;
+            cursor: pointer; margin: 5px 0; width: 100%; font-weight: 600;
+            transition: background 0.2s, opacity 0.2s;
+        }
+        button:hover:not(:disabled) { background: #0066DD; }
+        button:disabled { background: #c8c8d0; cursor: not-allowed; }
         button.secondary { background: #5856D6; }
-        button.danger { background: #FF3B30; padding: 6px 12px; width: auto; font-size: 12px; }
-        
-        .file-list { text-align: left; margin-top: 20px; border-top: 2px solid #eee; padding-top: 15px; display: none; }
-        .file-item { display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid #f0f0f0; }
-        .file-info { font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 250px; }
-        
-        progress { width: 100%; height: 15px; margin-top: 15px; display: none; }
-        #status { margin-top: 10px; font-weight: bold; font-size: 14px; color: #555; }
-        #log { font-size: 11px; color: #888; margin-top: 15px; text-align: left; width: 100%; overflow-y: auto; max-height: 80px; background: #eee; padding: 8px; border-radius: 5px; }
+        button.secondary:hover:not(:disabled) { background: #4645b8; }
+        button.danger {
+            background: #FF3B30; padding: 6px 14px;
+            width: auto; font-size: 12px; margin: 0;
+        }
+        button.danger:hover { background: #dd2b20; }
+
+        .file-select-row {
+            display: flex; gap: 8px; margin-bottom: 6px;
+        }
+        .file-select-row button { margin: 0; }
+        #selectedFile {
+            font-size: 12px; color: #555; text-align: left;
+            background: #f4f4f9; padding: 8px 10px; border-radius: 8px;
+            margin-bottom: 10px; min-height: 32px; word-break: break-all;
+        }
+
+        progress {
+            width: 100%; height: 10px; margin-top: 14px;
+            display: none; border-radius: 5px; overflow: hidden;
+        }
+        progress::-webkit-progress-bar { background: #eee; border-radius: 5px; }
+        progress::-webkit-progress-value { background: #007AFF; border-radius: 5px; }
+
+        #status {
+            margin-top: 12px; font-weight: 600; font-size: 13px;
+            color: #444; min-height: 20px;
+        }
+        .status-ok    { color: #34C759 !important; }
+        .status-error { color: #FF3B30 !important; }
+        .status-busy  { color: #FF9500 !important; }
+
+        hr { border: none; border-top: 1px solid #eee; margin: 18px 0; }
+
+        .file-list { text-align: left; display: none; }
+        .file-list-header {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 10px;
+        }
+        .file-list-header h3 { margin: 0; font-size: 15px; color: #1a1a2e; }
+        .file-item {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 10px 6px; border-bottom: 1px solid #f0f0f5;
+        }
+        .file-info {
+            font-size: 13px; font-weight: 500; overflow: hidden;
+            text-overflow: ellipsis; white-space: nowrap; max-width: 270px;
+        }
+        .empty-msg { font-size: 13px; color: #aaa; padding: 12px 0; }
+
+        #log {
+            font-size: 11px; color: #777; margin-top: 14px; text-align: left;
+            width: 100%; overflow-y: auto; max-height: 90px;
+            background: #f4f4f9; padding: 10px; border-radius: 8px;
+            font-family: monospace; line-height: 1.5;
+        }
+
+        .badge {
+            display: inline-block; font-size: 10px; font-weight: 700;
+            padding: 2px 7px; border-radius: 20px; margin-left: 6px;
+            vertical-align: middle;
+        }
+        .badge-connected { background: #d4f5e2; color: #1a7a40; }
+        .badge-disconnected { background: #f5d4d4; color: #7a1a1a; }
     </style>
 </head>
 <body>
 
 <div class="card">
-    <h2>E-Reader Manager</h2>
-    <p style="font-size: 14px; color: #666;">Upload books or manage internal storage.</p>
-    
-    <!-- Upload Section -->
-    <input type="file" id="fileInput" accept=".epub" style="display: none;">
-    <button id="selectBtn">1. Select EPUB</button>
-    <button id="connectBtn" disabled>2. Connect & Upload</button>
-    
-    <!-- Management Section -->
-    <button id="manageBtn" class="secondary">Manage Existing Files</button>
+    <h2>📖 E-Reader Manager</h2>
+    <p class="subtitle">Send EPUB books to your device over Bluetooth</p>
+
+    <!-- ── Upload Section ───────────────────────────── -->
+    <div class="file-select-row">
+        <button id="selectBtn" style="flex:1">📂 Choose EPUB</button>
+        <button id="connectBtn" disabled style="flex:1">⬆ Upload</button>
+    </div>
+    <div id="selectedFile">No file selected</div>
+    <input type="file" id="fileInput" accept=".epub" style="display:none">
 
     <progress id="progressBar" value="0" max="100"></progress>
-    <div id="status">Status: Disconnected</div>
-    
+    <div id="status">Status: Not connected
+        <span id="connBadge" class="badge badge-disconnected">●</span>
+    </div>
+
+    <hr>
+
+    <!-- ── Management Section ───────────────────────── -->
+    <button id="manageBtn" class="secondary">📚 Manage Library on Device</button>
+
     <div id="fileListSection" class="file-list">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-            <h3 style="margin: 0; font-size: 16px;">Files on Device</h3>
-            <button id="refreshBtn" class="secondary" style="width: auto; padding: 5px 10px; font-size: 12px;">Refresh</button>
+        <div class="file-list-header">
+            <h3>Books on Device</h3>
+            <button id="refreshBtn" class="secondary"
+                    style="width:auto;padding:6px 12px;font-size:12px">↻ Refresh</button>
         </div>
-        <div id="fileContainer">
-            <!-- Files will appear here -->
-        </div>
+        <div id="fileContainer"></div>
     </div>
 
     <div id="log"></div>
 </div>
 
 <script>
-    let cleanText = "";
-    let fileName = "";
-    let bleDevice = null;
-    let bleServer = null;
+// ── UUIDs (must match ESP32 firmware) ──────────────────────────────────────
+const SERVICE_UUID     = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
+const UPLOAD_CHAR_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
+const LIST_CHAR_UUID   = "beb5483e-36e1-4688-b7f5-ea07361b26a9";
+const DELETE_CHAR_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26aa";
+const CHUNK_SIZE       = 512;   // bytes per BLE write — match ESP32 MTU
 
-    // UUIDs - Match these in your ESP32 code
-    const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
-    const UPLOAD_CHAR_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
-    const LIST_CHAR_UUID   = "beb5483e-36e1-4688-b7f5-ea07361b26a9"; // New: For listing files
-    const DELETE_CHAR_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26aa"; // New: For deleting files
+// ── State ──────────────────────────────────────────────────────────────────
+let cleanText  = "";
+let fileName   = "";
+let bleDevice  = null;
+let bleServer  = null;
 
-    const log = (msg) => {
-        const div = document.getElementById('log');
-        div.innerHTML += `> ${msg}<br>`;
-        div.scrollTop = div.scrollHeight;
-    };
+// ── Helpers ────────────────────────────────────────────────────────────────
+const logEl    = document.getElementById('log');
+const statusEl = document.getElementById('status');
+const badgeEl  = document.getElementById('connBadge');
 
-    const setStatus = (msg) => document.getElementById('status').innerText = `Status: ${msg}`;
+function log(msg) {
+    const ts = new Date().toLocaleTimeString();
+    logEl.innerHTML += `<span style="color:#aaa">[${ts}]</span> ${msg}<br>`;
+    logEl.scrollTop = logEl.scrollHeight;
+}
 
-    // --- 1. EPUB Handling ---
-    document.getElementById('selectBtn').onclick = () => document.getElementById('fileInput').click();
+function setStatus(msg, type = '') {
+    statusEl.className = type ? `status-${type}` : '';
+    statusEl.innerHTML = `Status: ${msg} `;
+    statusEl.appendChild(badgeEl);
+}
 
-    document.getElementById('fileInput').onchange = async (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        fileName = file.name.replace(".epub", ".txt");
-        setStatus("Processing EPUB...");
+function setBadge(connected) {
+    badgeEl.className = `badge badge-${connected ? 'connected' : 'disconnected'}`;
+    badgeEl.textContent = connected ? '● Connected' : '● Disconnected';
+}
 
-        try {
-            const zip = await JSZip.loadAsync(file);
-            let textCollector = "";
-            const files = Object.keys(zip.files).filter(fn => fn.endsWith('.xhtml') || fn.endsWith('.html')).sort();
+// ── EPUB Parsing ───────────────────────────────────────────────────────────
+document.getElementById('selectBtn').onclick = () =>
+    document.getElementById('fileInput').click();
 
-            for (let fn of files) {
-                const html = await zip.files[fn].async("string");
-                const doc = new DOMParser().parseFromString(html, 'text/html');
-                textCollector += doc.body.textContent + "\n\n";
-            }
+document.getElementById('fileInput').onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
 
-            cleanText = textCollector;
-            setStatus(`Ready: ${fileName}`);
-            document.getElementById('connectBtn').disabled = false;
-            log("EPUB processed successfully.");
-        } catch (err) {
-            log(`Error: ${err.message}`);
-            setStatus("EPUB processing failed.");
-        }
-    };
+    fileName = file.name.replace(/\.epub$/i, '.txt');
+    document.getElementById('selectedFile').textContent = `📄 ${file.name}`;
+    setStatus('Processing EPUB…', 'busy');
+    log(`Parsing: ${file.name}`);
 
-    // --- 2. BLE Core ---
-    async function ensureConnected() {
-        if (bleDevice && bleDevice.gatt.connected) return true;
-        
-        try {
-            setStatus("Requesting Device...");
-            bleDevice = await navigator.bluetooth.requestDevice({
-                filters: [{ name: 'S3-Reader-BLE' }],
-                optionalServices: [SERVICE_UUID]
+    try {
+        const zip = await JSZip.loadAsync(file);
+
+        // Parse OPF spine to get reading order
+        let spineOrder = [];
+        const opfEntry = Object.keys(zip.files).find(n => n.endsWith('.opf'));
+        if (opfEntry) {
+            const opfXml = await zip.files[opfEntry].async("string");
+            const parser = new DOMParser();
+            const opfDoc = parser.parseFromString(opfXml, "text/xml");
+            const items  = {};
+            opfDoc.querySelectorAll("manifest item").forEach(el => {
+                items[el.getAttribute("id")] = el.getAttribute("href");
             });
-            
-            bleDevice.addEventListener('gattserverdisconnected', () => {
-                setStatus("Disconnected");
-                document.getElementById('fileListSection').style.display = "none";
+            opfDoc.querySelectorAll("spine itemref").forEach(el => {
+                const href = items[el.getAttribute("idref")];
+                if (href) {
+                    // Resolve relative to OPF location
+                    const base = opfEntry.includes('/') ?
+                        opfEntry.substring(0, opfEntry.lastIndexOf('/') + 1) : '';
+                    spineOrder.push(base + href);
+                }
             });
-
-            setStatus("Connecting...");
-            bleServer = await bleDevice.gatt.connect();
-            return true;
-        } catch (err) {
-            log(`Conn Error: ${err.message}`);
-            return false;
         }
+
+        // Fall back to sorted html/xhtml files if spine parsing fails
+        if (spineOrder.length === 0) {
+            spineOrder = Object.keys(zip.files)
+                .filter(fn => fn.endsWith('.xhtml') || fn.endsWith('.html'))
+                .sort();
+        }
+
+        let text = "";
+        for (const fn of spineOrder) {
+            // Try exact match, then URL-decoded
+            const entry = zip.files[fn] || zip.files[decodeURIComponent(fn)];
+            if (!entry) continue;
+            const html = await entry.async("string");
+            const doc  = new DOMParser().parseFromString(html, 'text/html');
+            // Remove nav/script/style noise
+            doc.querySelectorAll('nav, script, style, head').forEach(el => el.remove());
+            text += doc.body ? doc.body.textContent.trim() + "\n\n" : "";
+        }
+
+        // Normalise whitespace
+        cleanText = text.replace(/[ \t]+/g, ' ')
+                        .replace(/\n{3,}/g, '\n\n')
+                        .trim();
+
+        setStatus(`Ready — ${(cleanText.length / 1024).toFixed(1)} KB`, 'ok');
+        document.getElementById('connectBtn').disabled = false;
+        log(`Parsed ${cleanText.length.toLocaleString()} characters.`);
+    } catch (err) {
+        log(`Error: ${err.message}`);
+        setStatus('EPUB parsing failed', 'error');
     }
+};
 
-    // --- 3. Upload Logic ---
-    document.getElementById('connectBtn').onclick = async () => {
-        if (!await ensureConnected()) return;
+// ── BLE Connection ─────────────────────────────────────────────────────────
+async function ensureConnected() {
+    if (bleDevice?.gatt?.connected) return true;
 
-        try {
-            const service = await bleServer.getPrimaryService(SERVICE_UUID);
-            const characteristic = await service.getCharacteristic(UPLOAD_CHAR_UUID);
+    try {
+        setStatus('Requesting device…', 'busy');
+        bleDevice = await navigator.bluetooth.requestDevice({
+            filters: [{ name: 'S3-Reader-BLE' }],
+            optionalServices: [SERVICE_UUID]
+        });
 
-            setStatus("Uploading...");
-            const prog = document.getElementById('progressBar');
-            prog.style.display = "block";
-            
-            const encoder = new TextEncoder();
-            const data = encoder.encode(fileName + "|" + cleanText); // Send filename + content
-            const CHUNK_SIZE = 512;
+        bleDevice.addEventListener('gattserverdisconnected', () => {
+            setStatus('Disconnected', 'error');
+            setBadge(false);
+            document.getElementById('fileListSection').style.display = 'none';
+            log('Device disconnected.');
+        });
 
-            for (let i = 0; i < data.length; i += CHUNK_SIZE) {
-                const chunk = data.slice(i, i + CHUNK_SIZE);
-                await characteristic.writeValue(chunk);
-                prog.value = Math.round((i / data.length) * 100);
-            }
-
-            setStatus("Upload Complete!");
-            log("File sent to reader.");
-            prog.style.display = "none";
-        } catch (err) {
-            log(`Upload Error: ${err.message}`);
-        }
-    };
-
-    // --- 4. Management Logic ---
-    async function fetchFiles() {
-        if (!await ensureConnected()) return;
-
-        try {
-            setStatus("Fetching list...");
-            const service = await bleServer.getPrimaryService(SERVICE_UUID);
-            const characteristic = await service.getCharacteristic(LIST_CHAR_UUID);
-            
-            // Read current file list from device
-            const value = await characteristic.readValue();
-            const decoder = new TextDecoder();
-            const listData = decoder.decode(value);
-            
-            const container = document.getElementById('fileContainer');
-            container.innerHTML = "";
-            document.getElementById('fileListSection').style.display = "block";
-
-            if (!listData || listData === "") {
-                container.innerHTML = "<p style='font-size:12px; color:#999;'>No files found.</p>";
-                return;
-            }
-
-            const files = listData.split(",");
-            files.forEach(file => {
-                if (!file.trim()) return;
-                const item = document.createElement('div');
-                item.className = "file-item";
-                item.innerHTML = `
-                    <div class="file-info">${file}</div>
-                    <button class="danger" onclick="deleteFile('${file}')">Delete</button>
-                `;
-                container.appendChild(item);
-            });
-            setStatus("List Updated");
-        } catch (err) {
-            log(`Fetch Error: ${err.message}`);
-        }
+        setStatus('Connecting…', 'busy');
+        bleServer = await bleDevice.gatt.connect();
+        setBadge(true);
+        setStatus('Connected', 'ok');
+        log('Connected to S3-Reader-BLE');
+        return true;
+    } catch (err) {
+        log(`Connection error: ${err.message}`);
+        setStatus('Connection failed', 'error');
+        setBadge(false);
+        return false;
     }
+}
 
-    window.deleteFile = async (name) => {
-        if (!confirm(`Delete ${name}?`)) return;
-        
-        try {
-            setStatus(`Deleting ${name}...`);
-            const service = await bleServer.getPrimaryService(SERVICE_UUID);
-            const characteristic = await service.getCharacteristic(DELETE_CHAR_UUID);
-            
-            const encoder = new TextEncoder();
-            await characteristic.writeValue(encoder.encode(name));
-            
-            log(`Deleted: ${name}`);
-            fetchFiles(); // Refresh
-        } catch (err) {
-            log(`Delete Error: ${err.message}`);
+// ── Upload ─────────────────────────────────────────────────────────────────
+document.getElementById('connectBtn').onclick = async () => {
+    if (!cleanText) { log('No EPUB loaded.'); return; }
+    if (!await ensureConnected()) return;
+
+    try {
+        const service = await bleServer.getPrimaryService(SERVICE_UUID);
+        const char    = await service.getCharacteristic(UPLOAD_CHAR_UUID);
+
+        setStatus('Uploading…', 'busy');
+        const prog = document.getElementById('progressBar');
+        prog.style.display = 'block';
+        prog.value = 0;
+
+        // First chunk carries filename prefix: "name.txt|<text start>"
+        const encoder = new TextEncoder();
+        const prefix  = encoder.encode(fileName + "|");
+        const body    = encoder.encode(cleanText);
+
+        // Merge into one Uint8Array
+        const combined = new Uint8Array(prefix.length + body.length);
+        combined.set(prefix, 0);
+        combined.set(body, prefix.length);
+
+        const total = combined.length;
+        for (let i = 0; i < total; i += CHUNK_SIZE) {
+            const chunk = combined.slice(i, i + CHUNK_SIZE);
+            await char.writeValue(chunk);
+            prog.value = Math.round(((i + chunk.length) / total) * 100);
+            // Small yield to keep UI alive
+            if (i % (CHUNK_SIZE * 20) === 0) await new Promise(r => setTimeout(r, 10));
         }
-    };
 
-    document.getElementById('manageBtn').onclick = fetchFiles;
-    document.getElementById('refreshBtn').onclick = fetchFiles;
+        setStatus('Upload complete! ✓', 'ok');
+        log(`Sent "${fileName}" (${(total/1024).toFixed(1)} KB)`);
+        prog.value = 100;
+        setTimeout(() => { prog.style.display = 'none'; }, 2000);
+    } catch (err) {
+        log(`Upload error: ${err.message}`);
+        setStatus('Upload failed', 'error');
+    }
+};
 
+// ── Library Management ─────────────────────────────────────────────────────
+async function fetchFiles() {
+    if (!await ensureConnected()) return;
+
+    try {
+        setStatus('Fetching library…', 'busy');
+        const service = await bleServer.getPrimaryService(SERVICE_UUID);
+        const char    = await service.getCharacteristic(LIST_CHAR_UUID);
+
+        const value   = await char.readValue();
+        const list    = new TextDecoder().decode(value);
+
+        const container = document.getElementById('fileContainer');
+        container.innerHTML = '';
+        document.getElementById('fileListSection').style.display = 'block';
+
+        if (!list.trim()) {
+            container.innerHTML = '<p class="empty-msg">No books found on device.</p>';
+            setStatus('Library empty', '');
+            return;
+        }
+
+        const files = list.split(',').filter(Boolean);
+        files.forEach(title => {
+            const item = document.createElement('div');
+            item.className = 'file-item';
+            item.innerHTML = `
+                <div class="file-info">📖 ${title}</div>
+                <button class="danger" data-title="${title}">Delete</button>
+            `;
+            item.querySelector('.danger').onclick = () => deleteFile(title);
+            container.appendChild(item);
+        });
+
+        setStatus(`${files.length} book${files.length !== 1 ? 's' : ''} on device`, 'ok');
+        log(`Found ${files.length} book(s).`);
+    } catch (err) {
+        log(`Fetch error: ${err.message}`);
+        setStatus('Fetch failed', 'error');
+    }
+}
+
+async function deleteFile(title) {
+    if (!confirm(`Delete "${title}" from the device?`)) return;
+
+    try {
+        setStatus(`Deleting "${title}"…`, 'busy');
+        const service = await bleServer.getPrimaryService(SERVICE_UUID);
+        const char    = await service.getCharacteristic(DELETE_CHAR_UUID);
+        await char.writeValue(new TextEncoder().encode(title));
+        log(`Deleted: ${title}`);
+        await new Promise(r => setTimeout(r, 300));
+        fetchFiles();
+    } catch (err) {
+        log(`Delete error: ${err.message}`);
+        setStatus('Delete failed', 'error');
+    }
+}
+
+document.getElementById('manageBtn').onclick  = fetchFiles;
+document.getElementById('refreshBtn').onclick = fetchFiles;
 </script>
-
 </body>
 </html>
