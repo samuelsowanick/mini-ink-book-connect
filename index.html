@@ -1,322 +1,225 @@
-#include <Arduino.h>
-#include <WiFi.h>
-#include <ESPAsyncWebServer.h>
-#include <BLEDevice.h>
-#include <BLEServer.h>
-#include <BLEUtils.h>
-#include <BLE2902.h>
-#include <FS.h>
-#include <LittleFS.h> 
-#include <ArduinoJson.h>
-#include <Heltec-EInk-Modules.h>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BLE E-Reader Manager</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <style>
+        body { font-family: -apple-system, sans-serif; display: flex; flex-direction: column; align-items: center; padding: 20px; background: #f4f4f9; color: #333; }
+        .card { background: white; padding: 25px; border-radius: 15px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); width: 100%; max-width: 450px; text-align: center; margin-bottom: 20px; }
+        h2 { margin-top: 0; color: #007AFF; }
+        button { background: #007AFF; color: white; border: none; padding: 12px 20px; border-radius: 8px; font-size: 14px; cursor: pointer; margin: 5px; width: calc(100% - 10px); font-weight: 600; transition: opacity 0.2s; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        button.secondary { background: #5856D6; }
+        button.danger { background: #FF3B30; padding: 6px 12px; width: auto; font-size: 12px; }
+        
+        .file-list { text-align: left; margin-top: 20px; border-top: 2px solid #eee; padding-top: 15px; display: none; }
+        .file-item { display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid #f0f0f0; }
+        .file-info { font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 250px; }
+        
+        progress { width: 100%; height: 15px; margin-top: 15px; display: none; }
+        #status { margin-top: 10px; font-weight: bold; font-size: 14px; color: #555; }
+        #log { font-size: 11px; color: #888; margin-top: 15px; text-align: left; width: 100%; overflow-y: auto; max-height: 80px; background: #eee; padding: 8px; border-radius: 5px; }
+    </style>
+</head>
+<body>
 
-// --- LOGO BITMAP (64x64) ---
-#define logo_width 64
-#define logo_height 64
-static const unsigned char logo_bits[] = {
-  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3e, 0x7c, 0x00, 0x00, 0x00, 
-  0x00, 0x00, 0x00, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0xff, 
-  0xff, 0x01, 0x00, 0x00, 0x00, 0x00, 0xc0, 0xff, 0xff, 0x03, 0x00, 0x00, 
-  0x00, 0x00, 0xe0, 0xff, 0xff, 0x07, 0x00, 0x00, 0x00, 0x00, 0xf0, 0xff, 
-  0xff, 0x0f, 0x00, 0x00, 0x00, 0x00, 0xf0, 0xff, 0xff, 0x0f, 0x00, 0x00, 
-  0x00, 0x00, 0xf0, 0xff, 0xff, 0x0f, 0x00, 0x00, 0x00, 0x00, 0xe0, 0xff, 
-  0xff, 0x07, 0x00, 0x00, 0x00, 0x00, 0xc0, 0xff, 0xff, 0x03, 0x00, 0x00, 
-  0x00, 0x00, 0x80, 0xff, 0xff, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 
-  0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3e, 0x7c, 0x00, 0x00, 0x00, 
-  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf8, 0xff, 0xff, 0x1f, 0x00, 0x00, 
-  0x00, 0x00, 0xfe, 0xff, 0xff, 0x7f, 0x00, 0x00, 0x00, 0xc0, 0xff, 0xff, 
-  0xff, 0xff, 0x03, 0x00, 0x00, 0xe0, 0xff, 0xff, 0xff, 0xff, 0x07, 0x00, 
-  0x00, 0xf0, 0xff, 0xff, 0xff, 0xff, 0x0f, 0x00, 0x00, 0xf8, 0xff, 0xff, 
-  0xff, 0xff, 0x1f, 0x00, 0x00, 0xfc, 0xff, 0x07, 0xe0, 0xff, 0x3f, 0x00, 
-  0x00, 0xfe, 0xff, 0x03, 0xc0, 0xff, 0x7f, 0x00, 0x00, 0xfe, 0xff, 0x01, 
-  0x80, 0xff, 0x7f, 0x00, 0x00, 0xff, 0xff, 0x01, 0x80, 0xff, 0xff, 0x00, 
-  0x80, 0xff, 0xff, 0x00, 0x00, 0xff, 0xff, 0x01, 0xc0, 0xff, 0xff, 0x00, 
-  0x00, 0xff, 0xff, 0x03, 0xe0, 0xff, 0xff, 0x07, 0x00, 0xff, 0xff, 0x00, 
-  0x00, 0xff, 0xff, 0x01, 0xc0, 0xff, 0xff, 0x00, 0x00, 0xff, 0xff, 0x01, 
-  0x80, 0xff, 0xff, 0x00, 0x00, 0xfe, 0xff, 0x01, 0x80, 0xff, 0x7f, 0x00, 
-  0x00, 0xfe, 0xff, 0x03, 0xc0, 0xff, 0x7f, 0x00, 0x00, 0xfc, 0xff, 0x03, 
-  0xc0, 0xff, 0x3f, 0x00, 0x00, 0xf8, 0xff, 0x07, 0xe0, 0xff, 0x1f, 0x00, 
-  0x00, 0xf0, 0xff, 0x07, 0xe0, 0xff, 0x0f, 0x00, 0x00, 0xe0, 0xff, 0x0f, 0xf0, 0xff, 0x07, 0x00, 
-  0x00, 0xc0, 0xff, 0x1f, 0xf8, 0xff, 0x03, 0x00, 0x00, 0x80, 0xff, 0x3f, 
-  0xfc, 0xff, 0x01, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 
-  0x00, 0x00, 0xfe, 0xff, 0xff, 0x7f, 0x00, 0x00, 0x00, 0x00, 0xfc, 0xff, 
-  0xff, 0x3f, 0x00, 0x00, 0x00, 0x00, 0xf0, 0xff, 0xff, 0x0f, 0x00, 0x00, 
-  0x00, 0x00, 0xc0, 0xff, 0xff, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-};
-
-// --- PIN DEFINITIONS (Heltec Vision Master E290) ---
-#define BUTTON_UP    1
-#define BUTTON_SEL   2
-#define BUTTON_DOWN  3
-#define BATT_ADC     10
-
-// --- BLE UUIDS ---
-#define SERVICE_UUID           "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
-#define UPLOAD_CHAR_UUID       "beb5483e-36e1-4688-b7f5-ea07361b26a8"
-#define LIST_CHAR_UUID         "beb5483e-36e1-4688-b7f5-ea07361b26a9"
-#define DELETE_CHAR_UUID       "beb5483e-36e1-4688-b7f5-ea07361b26aa"
-
-// --- DISPLAY SETUP ---
-EInkDisplay_VisionMasterE290 display;
-
-// --- GLOBAL STATE ---
-enum AppState { MENU, READING, LIBRARY, BOOKMARKS, WIFI_MODE, BLE_MODE, SETTINGS, QUICK_MENU, OFF_STATE };
-AppState currentState = MENU;
-
-struct Config {
-  int fontSize = 12;
-  int designType = 0; // 0: [], 1: (), 2: **
-  int pagesSinceFullRefresh = 0;
-  char lastBook[64] = "";
-  int lastPage = 0;
-} config;
-
-String currentBookTitle = "";
-int currentMenuIdx = 0;
-int scrollOffset = 0; // For scrolling long lists
-bool isQuickMenu = false;
-unsigned long buttonPressTime = 0;
-
-// Servers
-AsyncWebServer server(80);
-BLEServer* pServer = NULL;
-BLECharacteristic* pUploadChar = NULL;
-BLECharacteristic* pListChar = NULL;
-BLECharacteristic* pDeleteChar = NULL;
-
-// --- FILE SYSTEM HELPERS ---
-
-String listFiles() {
-  String list = "";
-  File root = LittleFS.open("/books");
-  File file = root.openNextFile();
-  while(file) {
-    if(list != "") list += ",";
-    list += String(file.name());
-    file = root.openNextFile();
-  }
-  return list;
-}
-
-// --- BLE CALLBACKS ---
-
-class UploadCallbacks: public BLECharacteristicCallbacks {
-    String buffer = "";
-    void onWrite(BLECharacteristic *pCharacteristic) {
-      std::string value = pCharacteristic->getValue();
-      if (value.length() > 0) {
-        buffer += String(value.c_str());
-        // Simple check: if buffer contains '|', we split filename and start writing
-        // For production, a more robust packet header is better
-        int sepIdx = buffer.indexOf('|');
-        if (sepIdx != -1) {
-          String fn = buffer.substring(0, sepIdx);
-          String content = buffer.substring(sepIdx + 1);
-          File f = LittleFS.open("/books/" + fn, FILE_APPEND);
-          if (f) {
-            f.print(content);
-            f.close();
-          }
-          buffer = ""; // Reset for next chunk logic or simple implementation
-        }
-      }
-    }
-};
-
-class ListCallbacks: public BLECharacteristicCallbacks {
-    void onRead(BLECharacteristic *pCharacteristic) {
-      String files = listFiles();
-      pCharacteristic->setValue(files.c_str());
-    }
-};
-
-class DeleteCallbacks: public BLECharacteristicCallbacks {
-    void onWrite(BLECharacteristic *pCharacteristic) {
-      std::string filename = pCharacteristic->getValue();
-      if (filename.length() > 0) {
-        String path = "/books/" + String(filename.c_str());
-        if (LittleFS.exists(path)) {
-          LittleFS.remove(path);
-          Serial.println("Deleted: " + path);
-        }
-      }
-    }
-};
-
-// --- UI UTILS ---
-
-String getSelector(bool left) {
-  if (config.designType == 0) return left ? "[" : "]";
-  if (config.designType == 1) return left ? "(" : ")";
-  if (config.designType == 2) return "*";
-  return "";
-}
-
-void drawStatusBar() {
-  display.setFont(ArialMT_Plain_10);
-  display.setTextAlignment(TEXT_ALIGN_LEFT);
-  display.drawString(5, 2, "12:00");
-  
-  display.setTextAlignment(TEXT_ALIGN_CENTER);
-  String pos = (currentBookTitle == "") ? "Reader" : currentBookTitle;
-  display.drawString(148, 2, pos);
-  
-  display.setTextAlignment(TEXT_ALIGN_RIGHT);
-  float raw = analogRead(BATT_ADC);
-  float voltage = (raw / 4095.0) * 2 * 3.3 * 1.1; 
-  display.drawString(290, 2, String(voltage, 1) + "V");
-  display.drawLine(0, 15, 296, 15);
-}
-
-// Optimized render with FastMode support
-void renderMenu(const char* options[], int count, bool forceFull = false) {
-  if (forceFull) {
-    display.fastmodeOff();
-    config.pagesSinceFullRefresh = 0;
-  } else {
-    display.fastmodeOn();
-  }
-
-  DRAW(display) {
-    display.clear();
-    drawStatusBar();
-    display.setFont(ArialMT_Plain_16);
-    display.setTextAlignment(TEXT_ALIGN_LEFT);
+<div class="card">
+    <h2>E-Reader Manager</h2>
+    <p style="font-size: 14px; color: #666;">Upload books or manage internal storage.</p>
     
-    int visibleItems = 5;
-    if (currentMenuIdx < scrollOffset) scrollOffset = currentMenuIdx;
-    if (currentMenuIdx >= scrollOffset + visibleItems) scrollOffset = currentMenuIdx - visibleItems + 1;
+    <!-- Upload Section -->
+    <input type="file" id="fileInput" accept=".epub" style="display: none;">
+    <button id="selectBtn">1. Select EPUB</button>
+    <button id="connectBtn" disabled>2. Connect & Upload</button>
+    
+    <!-- Management Section -->
+    <button id="manageBtn" class="secondary">Manage Existing Files</button>
 
-    for (int i = 0; i < visibleItems && (i + scrollOffset) < count; i++) {
-      int idx = i + scrollOffset;
-      int y = 25 + (i * 22);
-      if (idx == currentMenuIdx) {
-        display.drawString(10, y, getSelector(true) + " " + String(options[idx]) + " " + getSelector(false));
-      } else {
-        display.drawString(25, y, options[idx]);
-      }
+    <progress id="progressBar" value="0" max="100"></progress>
+    <div id="status">Status: Disconnected</div>
+    
+    <div id="fileListSection" class="file-list">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <h3 style="margin: 0; font-size: 16px;">Files on Device</h3>
+            <button id="refreshBtn" class="secondary" style="width: auto; padding: 5px 10px; font-size: 12px;">Refresh</button>
+        </div>
+        <div id="fileContainer">
+            <!-- Files will appear here -->
+        </div>
+    </div>
+
+    <div id="log"></div>
+</div>
+
+<script>
+    let cleanText = "";
+    let fileName = "";
+    let bleDevice = null;
+    let bleServer = null;
+
+    // UUIDs - Match these in your ESP32 code
+    const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
+    const UPLOAD_CHAR_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
+    const LIST_CHAR_UUID   = "beb5483e-36e1-4688-b7f5-ea07361b26a9"; // New: For listing files
+    const DELETE_CHAR_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26aa"; // New: For deleting files
+
+    const log = (msg) => {
+        const div = document.getElementById('log');
+        div.innerHTML += `> ${msg}<br>`;
+        div.scrollTop = div.scrollHeight;
+    };
+
+    const setStatus = (msg) => document.getElementById('status').innerText = `Status: ${msg}`;
+
+    // --- 1. EPUB Handling ---
+    document.getElementById('selectBtn').onclick = () => document.getElementById('fileInput').click();
+
+    document.getElementById('fileInput').onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        fileName = file.name.replace(".epub", ".txt");
+        setStatus("Processing EPUB...");
+
+        try {
+            const zip = await JSZip.loadAsync(file);
+            let textCollector = "";
+            const files = Object.keys(zip.files).filter(fn => fn.endsWith('.xhtml') || fn.endsWith('.html')).sort();
+
+            for (let fn of files) {
+                const html = await zip.files[fn].async("string");
+                const doc = new DOMParser().parseFromString(html, 'text/html');
+                textCollector += doc.body.textContent + "\n\n";
+            }
+
+            cleanText = textCollector;
+            setStatus(`Ready: ${fileName}`);
+            document.getElementById('connectBtn').disabled = false;
+            log("EPUB processed successfully.");
+        } catch (err) {
+            log(`Error: ${err.message}`);
+            setStatus("EPUB processing failed.");
+        }
+    };
+
+    // --- 2. BLE Core ---
+    async function ensureConnected() {
+        if (bleDevice && bleDevice.gatt.connected) return true;
+        
+        try {
+            setStatus("Requesting Device...");
+            bleDevice = await navigator.bluetooth.requestDevice({
+                filters: [{ name: 'S3-Reader-BLE' }],
+                optionalServices: [SERVICE_UUID]
+            });
+            
+            bleDevice.addEventListener('gattserverdisconnected', () => {
+                setStatus("Disconnected");
+                document.getElementById('fileListSection').style.display = "none";
+            });
+
+            setStatus("Connecting...");
+            bleServer = await bleDevice.gatt.connect();
+            return true;
+        } catch (err) {
+            log(`Conn Error: ${err.message}`);
+            return false;
+        }
     }
-  }
-}
 
-// --- CONNECTIVITY ---
+    // --- 3. Upload Logic ---
+    document.getElementById('connectBtn').onclick = async () => {
+        if (!await ensureConnected()) return;
 
-void startBLE() {
-  BLEDevice::init("S3-Reader-BLE");
-  pServer = BLEDevice::createServer();
-  BLEService *pService = pServer->createService(SERVICE_UUID);
+        try {
+            const service = await bleServer.getPrimaryService(SERVICE_UUID);
+            const characteristic = await service.getCharacteristic(UPLOAD_CHAR_UUID);
 
-  pUploadChar = pService->createCharacteristic(UPLOAD_CHAR_UUID, BLECharacteristic::PROPERTY_WRITE);
-  pUploadChar->setCallbacks(new UploadCallbacks());
+            setStatus("Uploading...");
+            const prog = document.getElementById('progressBar');
+            prog.style.display = "block";
+            
+            const encoder = new TextEncoder();
+            const data = encoder.encode(fileName + "|" + cleanText); // Send filename + content
+            const CHUNK_SIZE = 512;
 
-  pListChar = pService->createCharacteristic(LIST_CHAR_UUID, BLECharacteristic::PROPERTY_READ);
-  pListChar->setCallbacks(new ListCallbacks());
+            for (let i = 0; i < data.length; i += CHUNK_SIZE) {
+                const chunk = data.slice(i, i + CHUNK_SIZE);
+                await characteristic.writeValue(chunk);
+                prog.value = Math.round((i / data.length) * 100);
+            }
 
-  pDeleteChar = pService->createCharacteristic(DELETE_CHAR_UUID, BLECharacteristic::PROPERTY_WRITE);
-  pDeleteChar->setCallbacks(new DeleteCallbacks());
+            setStatus("Upload Complete!");
+            log("File sent to reader.");
+            prog.style.display = "none";
+        } catch (err) {
+            log(`Upload Error: ${err.message}`);
+        }
+    };
 
-  pService->start();
-  BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
-  pAdvertising->addServiceUUID(SERVICE_UUID);
-  pAdvertising->setScanResponse(true);
-  BLEDevice::startAdvertising();
-}
+    // --- 4. Management Logic ---
+    async function fetchFiles() {
+        if (!await ensureConnected()) return;
 
-void startWiFiUpload() {
-  WiFi.softAP("Reader-WiFi", "12345678");
-  server.on("/upload", HTTP_POST, [](AsyncWebServerRequest *request) {
-    request->send(200, "text/plain", "OK");
-  }, [](AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
-    if (!index) {
-      request->_tempFile = LittleFS.open("/books/" + filename, FILE_WRITE);
+        try {
+            setStatus("Fetching list...");
+            const service = await bleServer.getPrimaryService(SERVICE_UUID);
+            const characteristic = await service.getCharacteristic(LIST_CHAR_UUID);
+            
+            // Read current file list from device
+            const value = await characteristic.readValue();
+            const decoder = new TextDecoder();
+            const listData = decoder.decode(value);
+            
+            const container = document.getElementById('fileContainer');
+            container.innerHTML = "";
+            document.getElementById('fileListSection').style.display = "block";
+
+            if (!listData || listData === "") {
+                container.innerHTML = "<p style='font-size:12px; color:#999;'>No files found.</p>";
+                return;
+            }
+
+            const files = listData.split(",");
+            files.forEach(file => {
+                if (!file.trim()) return;
+                const item = document.createElement('div');
+                item.className = "file-item";
+                item.innerHTML = `
+                    <div class="file-info">${file}</div>
+                    <button class="danger" onclick="deleteFile('${file}')">Delete</button>
+                `;
+                container.appendChild(item);
+            });
+            setStatus("List Updated");
+        } catch (err) {
+            log(`Fetch Error: ${err.message}`);
+        }
     }
-    if (request->_tempFile) request->_tempFile.write(data, len);
-    if (final && request->_tempFile) request->_tempFile.close();
-  });
-  server.begin();
-}
 
-// --- INPUT HANDLING ---
+    window.deleteFile = async (name) => {
+        if (!confirm(`Delete ${name}?`)) return;
+        
+        try {
+            setStatus(`Deleting ${name}...`);
+            const service = await bleServer.getPrimaryService(SERVICE_UUID);
+            const characteristic = await service.getCharacteristic(DELETE_CHAR_UUID);
+            
+            const encoder = new TextEncoder();
+            await characteristic.writeValue(encoder.encode(name));
+            
+            log(`Deleted: ${name}`);
+            fetchFiles(); // Refresh
+        } catch (err) {
+            log(`Delete Error: ${err.message}`);
+        }
+    };
 
-void handleButtons() {
-  static bool lastUp = HIGH, lastSel = HIGH, lastDown = HIGH;
-  bool currUp = digitalRead(BUTTON_UP);
-  bool currSel = digitalRead(BUTTON_SEL);
-  bool currDown = digitalRead(BUTTON_DOWN);
+    document.getElementById('manageBtn').onclick = fetchFiles;
+    document.getElementById('refreshBtn').onclick = fetchFiles;
 
-  const char* mainOpts[] = {"Continue", "Library", "Bookmarks", "WiFi Upload", "Settings", "Design", "Power Off"};
-  int mainCount = 7;
+</script>
 
-  if (currSel == LOW && lastSel == HIGH) buttonPressTime = millis();
-  if (currSel == HIGH && lastSel == LOW) {
-    if (millis() - buttonPressTime > 1500) {
-      currentState = OFF_STATE;
-    } else {
-      if (currentMenuIdx == 3) { currentState = WIFI_MODE; startWiFiUpload(); }
-      if (currentMenuIdx == 6) currentState = OFF_STATE;
-      renderMenu(mainOpts, mainCount, true);
-    }
-  }
-
-  if (currUp == LOW && lastUp == HIGH) {
-    currentMenuIdx = (currentMenuIdx > 0) ? currentMenuIdx - 1 : mainCount - 1;
-    config.pagesSinceFullRefresh++;
-    renderMenu(mainOpts, mainCount, (config.pagesSinceFullRefresh >= 15));
-  }
-
-  if (currDown == LOW && lastDown == HIGH) {
-    currentMenuIdx = (currentMenuIdx < mainCount - 1) ? currentMenuIdx + 1 : 0;
-    config.pagesSinceFullRefresh++;
-    renderMenu(mainOpts, mainCount, (config.pagesSinceFullRefresh >= 15));
-  }
-
-  lastUp = currUp; lastSel = currSel; lastDown = currDown;
-}
-
-// --- MAIN ---
-
-void setup() {
-  Serial.begin(115200);
-  pinMode(BUTTON_UP, INPUT_PULLUP);
-  pinMode(BUTTON_SEL, INPUT_PULLUP);
-  pinMode(BUTTON_DOWN, INPUT_PULLUP);
-  
-  display.begin();
-  display.setRotation(1);
-  
-  if (!LittleFS.begin(true)) {
-    Serial.println("LittleFS Mount Failed");
-  } else {
-    if (!LittleFS.exists("/books")) LittleFS.mkdir("/books");
-  }
-
-  startBLE(); // Always start BLE in background for management
-
-  const char* mainOpts[] = {"Continue", "Library", "Bookmarks", "WiFi Upload", "Settings", "Design", "Power Off"};
-  renderMenu(mainOpts, 7, true);
-}
-
-void loop() {
-  handleButtons();
-  
-  if (currentState == OFF_STATE) {
-    display.fastmodeOff();
-    display.clear();
-    int x = (display.width() - logo_width) / 2;
-    int y = (display.height() - logo_height) / 2 - 10;
-    DRAW(display) {
-      display.drawXBitmap(x, y, logo_bits, logo_width, logo_height, BLACK);
-      display.setFont(ArialMT_Plain_16);
-      display.setTextAlignment(TEXT_ALIGN_CENTER);
-      display.drawString(display.width() / 2, y + logo_height + 5, "Powering Off...");
-    }
-    delay(2000);
-    esp_deep_sleep_start();
-  }
-  delay(10); 
-}
+</body>
+</html>
