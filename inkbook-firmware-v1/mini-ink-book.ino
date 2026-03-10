@@ -47,14 +47,6 @@
 // ─── Display ────────────────────────────────────────────────────────────────
 EInkDisplay_VisionMasterE290 display;
 
-// ─── Battery voltage monitoring ──────────────────────────────────────────────
-// Heltec VisionMaster E290 routes VBAT through a 1:2 resistor divider to GPIO1.
-// Adjust BATT_ADC_PIN if your specific board revision differs.
-#define BATT_ADC_PIN    1       // GPIO1 = ADC1_CH0 on ESP32-S3
-#define BATT_V_FULL     4200    // mV — fully charged LiPo
-#define BATT_V_EMPTY    3000    // mV — cutoff voltage
-#define BATT_ADC_VREF   3300    // mV — ADC reference (3.3 V rail)
-#define BATT_DIVIDER    2       // on-board voltage divider ratio
 
 // ─── Layout (landscape 296 × 128) ───────────────────────────────────────────
 #define SCREEN_W        128
@@ -208,7 +200,6 @@ void doUpdate(bool forceFull = false);
 
 void drawSleepQuote();
 void handleChapterSelectInput(BtnEvent e);
-void drawBatteryPercent();
 
 void drawCenteredTitle(const char* title);
 void drawMenu(bool full = false);
@@ -328,7 +319,7 @@ class DeleteCallback : public BLECharacteristicCallbacks {
   }
 };
 class ServerCallbacks : public BLEServerCallbacks {
-  void onConnect(BLEServer*)    override { Serial.println("BLE connected"); }
+  void onConnect(BLEServer*)    override { }
   void onDisconnect(BLEServer*) override { BLEDevice::startAdvertising(); }
 };
 
@@ -336,7 +327,6 @@ class ServerCallbacks : public BLEServerCallbacks {
 //  SETUP
 // ============================================================
 void setup() {
-  Serial.begin(115200);
   pinMode(BTN_PIN, INPUT_PULLUP);
   esp_sleep_enable_ext0_wakeup((gpio_num_t)BTN_PIN, 0);
 
@@ -361,6 +351,7 @@ void loop() {
 
   BtnEvent e = readButton();
   if (e == BTN_NONE) return;
+
 
   switch (appState) {
     case STATE_MENU:                 handleMenuInput(e);              break;
@@ -706,30 +697,6 @@ void resetAllProgress() {
   saveMeta();
 }
 
-// ============================================================
-//  BATTERY
-// ============================================================
-int readBatteryPercent() {
-  long sum = 0;
-  for (int i = 0; i < 8; i++) { sum += analogRead(BATT_ADC_PIN); delay(1); }
-  int raw = (int)(sum / 8);
-  int mv  = (int)((long)raw * BATT_ADC_VREF * BATT_DIVIDER / 4095);
-  int pct = (int)((long)(mv - BATT_V_EMPTY) * 100 / (BATT_V_FULL - BATT_V_EMPTY));
-  if (pct > 100) pct = 100;
-  if (pct <   0) pct =   0;
-  return pct;
-}
-
-void drawBatteryPercent() {
-  int pct = readBatteryPercent();
-  char buf[6]; sprintf(buf, "%d%%", pct);
-  // Right-align in top-right corner
-  int x = SCREEN_H - (int)strlen(buf) * CHAR_W - MARGIN_X;
-  display.setFont(nullptr);
-  display.setTextSize(1);
-  display.setCursor(x, MARGIN_Y);
-  display.print(buf);
-}
 
 // ============================================================
 //  DISPLAY HELPERS  (menus always use textSize 1)
@@ -759,10 +726,8 @@ void drawMenu(bool full) {
   display.setTextColor(BLACK);
 
   drawCenteredTitle("Mini InkBook");
-  drawBatteryPercent();
   if (bleEnabled) {
-    // shift BLE tag left to avoid overlap with battery %
-    display.setCursor(SCREEN_H - CHAR_W * 10 - MARGIN_X, MARGIN_Y);
+    display.setCursor(SCREEN_H - CHAR_W * 5 - MARGIN_X, MARGIN_Y);
     display.print("[BLE]");
   }
 
@@ -788,7 +753,6 @@ void drawLibrary(bool full) {
   display.setTextSize(1);
   display.setTextColor(BLACK);
   drawCenteredTitle("Library");
-  drawBatteryPercent();
 
   if (bookCount == 0) {
     display.setCursor(MARGIN_X, MARGIN_Y + CHAR_H + 6);
@@ -928,7 +892,6 @@ void drawBookmarks(bool full) {
   display.setTextSize(1);
   display.setTextColor(BLACK);
   drawCenteredTitle("Bookmarks");
-  drawBatteryPercent();
 
   if (bookmarkCount == 0) {
     display.setCursor(MARGIN_X, MARGIN_Y + CHAR_H + 6);
@@ -969,7 +932,6 @@ void drawSettings(bool full) {
   display.setTextSize(1);
   display.setTextColor(BLACK);
   drawCenteredTitle("Settings");
-  drawBatteryPercent();
 
   int y = MARGIN_Y + CHAR_H + 6;
   for (int i = 0; i < SETTINGS_COUNT; i++) {
@@ -1047,7 +1009,6 @@ void drawInfo() {
   display.setTextSize(1);
   display.setTextColor(BLACK);
   drawCenteredTitle("Button Guide");
-  drawBatteryPercent();
 
   int visibleLines = (SCREEN_W - MARGIN_Y*2 - CHAR_H - 8) / (CHAR_H + 1);
   int y = MARGIN_Y + CHAR_H + 6;
@@ -1127,14 +1088,13 @@ void buildPageIndex(int bookIdx) {
     if (lineCount >= READ_LINES_PER_PAGE) {
       pageOffsets[totalPages++] = f.position();
       lineCount = lineChars = 0;
+      yield(); // feed watchdog during long index builds
     }
   }
 
   f.close();
   books[bookIdx].totalPages = totalPages;
   saveMeta();
-  Serial.printf("Book '%s': %d pages, %d chapters\n",
-                books[bookIdx].title.c_str(), totalPages, chapterCount);
 }
 
 String getPageText(int bookIdx, int page) {
@@ -1320,6 +1280,5 @@ void drawSleepQuote() {
 // ============================================================
 void goToSleep() {
   if (bleServerRunning) stopBLE();
-  Serial.flush();
   esp_deep_sleep_start();
 }
