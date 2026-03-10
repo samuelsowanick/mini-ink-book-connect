@@ -664,29 +664,49 @@ document.getElementById('fileInput').onchange = async (e) => {
             log(`Fallback spine: ${spineOrder.length} files`, 'warn');
         }
 
-        // ── 8. Extract text from each spine document ──────────────────────
-        let text = "";
-        let chapterCount  = 0;
-        let skippedCount  = 0;
+// ── 8. Extract text from each spine document ──────────────────────────
+const BLOCK_TAGS = new Set([
+    'P','DIV','H1','H2','H3','H4','H5','H6',
+    'LI','TR','TD','TH','BLOCKQUOTE','PRE',
+    'SECTION','ARTICLE','HEADER','FOOTER','ASIDE',
+    'BR','HR','DT','DD','FIGURE','FIGCAPTION'
+]);
 
-        for (const { path, label } of spineOrder) {
-            const entry = zipEntry(zip, path);
-            if (!entry) {
-                log(`  Skipped (not in zip): ${path}`, 'warn');
-                skippedCount++;
-                continue;
-            }
-            const html     = await entry.async("string");
-            const doc      = new DOMParser().parseFromString(html, 'text/html');
-            // Remove boilerplate elements
-            doc.querySelectorAll('nav, script, style, head, aside').forEach(el => el.remove());
-            const bodyText = doc.body ? doc.body.textContent.replace(/\s+/g, ' ').trim() : "";
-            if (!bodyText) continue;
-            if (label) { chapterCount++; text += `\n\n=== ${label} ===\n\n`; }
-            text += bodyText + "\n\n";
-        }
+function extractText(node) {
+    if (node.nodeType === Node.TEXT_NODE) return node.textContent;
+    if (node.nodeType !== Node.ELEMENT_NODE) return '';
+    const tag = node.tagName?.toUpperCase();
+    // Skip invisible/boilerplate elements
+    if (['SCRIPT','STYLE','HEAD','NAV','ASIDE'].includes(tag)) return '';
+    let result = '';
+    for (const child of node.childNodes) {
+        result += extractText(child);
+    }
+    // Wrap block elements with newlines so words don't merge
+    if (BLOCK_TAGS.has(tag)) {
+        return '\n' + result.trim() + '\n';
+    }
+    return result;
+}
 
-        if (skippedCount > 0) log(`${skippedCount} spine items could not be found in zip`, 'warn');
+let text = "";
+let chapterCount  = 0;
+let skippedCount  = 0;
+
+for (const { path, label } of spineOrder) {
+    const entry = zipEntry(zip, path);
+    if (!entry) {
+        log(`  Skipped (not in zip): ${path}`, 'warn');
+        skippedCount++;
+        continue;
+    }
+    const html = await entry.async("string");
+    const doc  = new DOMParser().parseFromString(html, 'text/html');
+    const bodyText = doc.body ? extractText(doc.body).trim() : "";
+    if (!bodyText) continue;
+    if (label) { chapterCount++; text += `\n\n=== ${label} ===\n\n`; }
+    text += bodyText + "\n\n";
+}
 
         // ── 9. Normalise whitespace ───────────────────────────────────────
         let normalized = text.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
@@ -893,4 +913,5 @@ document.getElementById('refreshBtn').onclick = fetchFiles;
 </script>
 </body>
 </html>
+
 
