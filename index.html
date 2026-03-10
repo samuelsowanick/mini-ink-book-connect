@@ -3,173 +3,434 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>E-Reader Manager</title>
+    <title>Mini InkBook Manager</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Source+Sans+3:wght@300;400;600&display=swap" rel="stylesheet">
     <style>
-        * { box-sizing: border-box; }
+        :root {
+            --ink:        #1c1c1c;
+            --ink-mid:    #4a4a4a;
+            --ink-light:  #767676;
+            --border:     #d8d8d8;
+            --bg:         #f5f4f0;
+            --surface:    #ffffff;
+            --accent:     #00b284;
+            --accent-dk:  #008f69;
+            --warn:       #e05c00;
+            --danger:     #c0392b;
+            --disabled:   #b8b8b8;
+            --radius:     4px;
+            --font-head:  'Montserrat', sans-serif;
+            --font-body:  'Source Sans 3', sans-serif;
+        }
+
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            display: flex; flex-direction: column; align-items: center;
-            padding: 20px; background: #f0f2f5; color: #1a1a2e; min-height: 100vh;
-        }
-        .card {
-            background: white; padding: 28px; border-radius: 18px;
-            box-shadow: 0 4px 24px rgba(0,0,0,0.10); width: 100%;
-            max-width: 460px; text-align: center; margin-bottom: 20px;
-        }
-        h2 { margin: 0 0 4px; color: #007AFF; font-size: 22px; }
-        .subtitle { font-size: 13px; color: #888; margin-bottom: 20px; }
-
-        button {
-            background: #007AFF; color: white; border: none;
-            padding: 13px 18px; border-radius: 10px; font-size: 14px;
-            cursor: pointer; margin: 5px 0; width: 100%; font-weight: 600;
-            transition: background 0.2s, opacity 0.2s;
-        }
-        button:hover:not(:disabled) { background: #0066DD; }
-        button:disabled { background: #c8c8d0; cursor: not-allowed; }
-        button.secondary { background: #5856D6; }
-        button.secondary:hover:not(:disabled) { background: #4645b8; }
-        button.danger {
-            background: #FF3B30; padding: 6px 14px;
-            width: auto; font-size: 12px; margin: 0;
-        }
-        button.danger:hover { background: #dd2b20; }
-
-        .file-select-row {
-            display: flex; gap: 8px; margin-bottom: 6px;
-        }
-        .file-select-row button { margin: 0; }
-        #selectedFile {
-            font-size: 12px; color: #555; text-align: left;
-            background: #f4f4f9; padding: 8px 10px; border-radius: 8px;
-            margin-bottom: 10px; min-height: 32px; word-break: break-all;
+            font-family: var(--font-body);
+            font-size: 15px;
+            background: var(--bg);
+            color: var(--ink);
+            min-height: 100vh;
         }
 
+        /* ── Top bar ── */
+        .topbar {
+            background: var(--ink);
+            padding: 0 24px;
+            height: 52px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .topbar-brand {
+            font-family: var(--font-head);
+            font-size: 15px;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            color: #ffffff;
+            text-transform: uppercase;
+        }
+        .topbar-brand span { color: var(--accent); }
+
+        .conn-pill {
+            font-family: var(--font-head);
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            padding: 4px 10px;
+            border-radius: 20px;
+            border: 1.5px solid;
+            transition: all 0.2s;
+        }
+        .conn-pill.disconnected { color: #888; border-color: #555; }
+        .conn-pill.connected    { color: var(--accent); border-color: var(--accent); }
+
+        /* ── Page layout ── */
+        .page {
+            max-width: 560px;
+            margin: 0 auto;
+            padding: 32px 20px 60px;
+        }
+        .page-title {
+            font-family: var(--font-head);
+            font-size: 22px;
+            font-weight: 700;
+            letter-spacing: -0.01em;
+            color: var(--ink);
+            margin-bottom: 4px;
+        }
+        .page-sub {
+            font-size: 13px;
+            color: var(--ink-light);
+            font-weight: 300;
+            margin-bottom: 28px;
+        }
+
+        /* ── Sections ── */
+        .section {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            margin-bottom: 16px;
+            overflow: hidden;
+        }
+        .section-header {
+            padding: 14px 20px 12px;
+            border-bottom: 1px solid var(--border);
+        }
+        .section-label {
+            font-family: var(--font-head);
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--ink-light);
+        }
+        .section-body { padding: 20px; }
+
+        /* ── Status row ── */
+        .status-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        .status-dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: var(--disabled);
+            flex-shrink: 0;
+            transition: background 0.3s;
+        }
+        .status-dot.ok    { background: var(--accent); }
+        .status-dot.error { background: var(--danger); }
+        .status-dot.busy  { background: var(--warn); animation: pulse 1s infinite; }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; } 50% { opacity: 0.3; }
+        }
+        .status-text { font-size: 13px; color: var(--ink-mid); }
+
+        /* ── Buttons ── */
+        .btn {
+            font-family: var(--font-head);
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            padding: 11px 20px;
+            border-radius: var(--radius);
+            border: none;
+            cursor: pointer;
+            transition: background 0.15s, opacity 0.15s, transform 0.1s;
+            display: inline-block;
+            line-height: 1;
+        }
+        .btn:active:not(:disabled) { transform: scale(0.98); }
+        .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        .btn-primary { background: var(--accent); color: #fff; width: 100%; padding: 13px 20px; }
+        .btn-primary:hover:not(:disabled) { background: var(--accent-dk); }
+
+        .btn-disconnect { background: #2a1414; color: #ff8a80; width: 100%; padding: 13px 20px; }
+        .btn-disconnect:hover:not(:disabled) { background: #3d1a1a; }
+
+        .btn-outline {
+            background: transparent;
+            color: var(--ink);
+            border: 1.5px solid var(--border);
+            width: 100%;
+            padding: 11px 20px;
+        }
+        .btn-outline:hover:not(:disabled) { border-color: var(--ink); background: rgba(0,0,0,0.03); }
+
+        .btn-ghost {
+            background: transparent;
+            color: var(--ink-light);
+            border: 1.5px solid var(--border);
+            font-size: 11px;
+            padding: 7px 12px;
+        }
+        .btn-ghost:hover:not(:disabled) { border-color: var(--ink-mid); color: var(--ink); }
+
+        .btn-row { display: flex; gap: 10px; }
+        .btn-row .btn { flex: 1; }
+
+        /* ── File info box ── */
+        .file-info-box {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 12px 14px;
+            margin: 12px 0 0;
+            min-height: 46px;
+        }
+        .file-info-box .file-title {
+            font-family: var(--font-head);
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--ink);
+            margin-bottom: 3px;
+        }
+        .file-info-box .file-meta { font-size: 11px; color: var(--ink-light); font-weight: 300; }
+        .file-info-box .file-placeholder { font-size: 12px; color: var(--ink-light); }
+
+        /* ── Progress ── */
+        .progress-wrap { margin-top: 14px; display: none; }
+        .progress-label {
+            font-size: 11px;
+            color: var(--ink-light);
+            font-family: var(--font-head);
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            margin-bottom: 6px;
+            display: flex;
+            justify-content: space-between;
+        }
         progress {
-            width: 100%; height: 10px; margin-top: 14px;
-            display: none; border-radius: 5px; overflow: hidden;
+            width: 100%; height: 4px;
+            border: none; border-radius: 2px;
+            background: var(--border);
+            appearance: none; -webkit-appearance: none;
         }
-        progress::-webkit-progress-bar { background: #eee; border-radius: 5px; }
-        progress::-webkit-progress-value { background: #007AFF; border-radius: 5px; }
+        progress::-webkit-progress-bar   { background: var(--border); border-radius: 2px; }
+        progress::-webkit-progress-value { background: var(--accent); border-radius: 2px; }
+        progress::-moz-progress-bar      { background: var(--accent); border-radius: 2px; }
 
-        #status {
-            margin-top: 12px; font-weight: 600; font-size: 13px;
-            color: #444; min-height: 20px;
-        }
-        .status-ok    { color: #34C759 !important; }
-        .status-error { color: #FF3B30 !important; }
-        .status-busy  { color: #FF9500 !important; }
+        /* ── Divider ── */
+        .divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
 
-        hr { border: none; border-top: 1px solid #eee; margin: 18px 0; }
+        /* ── Book list ── */
+        .book-list { display: none; }
+        .book-list-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 14px;
+        }
+        .book-list-title {
+            font-family: var(--font-head);
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--ink-mid);
+        }
+        .book-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid var(--border);
+        }
+        .book-item:last-child { border-bottom: none; }
+        .book-item-title { font-size: 14px; font-weight: 400; color: var(--ink); }
+        .btn-delete {
+            font-family: var(--font-head);
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            background: transparent;
+            color: var(--danger);
+            border: 1.5px solid var(--danger);
+            padding: 5px 10px;
+            border-radius: var(--radius);
+            cursor: pointer;
+            transition: background 0.15s, color 0.15s;
+            flex-shrink: 0;
+        }
+        .btn-delete:hover { background: var(--danger); color: #fff; }
+        .empty-msg {
+            font-size: 13px;
+            color: var(--ink-light);
+            text-align: center;
+            padding: 20px 0;
+            font-weight: 300;
+        }
 
-        .file-list { text-align: left; display: none; }
-        .file-list-header {
-            display: flex; justify-content: space-between; align-items: center;
-            margin-bottom: 10px;
+        /* ── Details / log ── */
+        details { margin-top: 16px; }
+        summary {
+            font-family: var(--font-head);
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--ink-light);
+            cursor: pointer;
+            user-select: none;
+            list-style: none;
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
-        .file-list-header h3 { margin: 0; font-size: 15px; color: #1a1a2e; }
-        .file-item {
-            display: flex; justify-content: space-between; align-items: center;
-            padding: 10px 6px; border-bottom: 1px solid #f0f0f5;
+        summary::-webkit-details-marker { display: none; }
+        summary::before {
+            content: '';
+            display: inline-block;
+            width: 6px; height: 6px;
+            border-right: 1.5px solid var(--ink-light);
+            border-bottom: 1.5px solid var(--ink-light);
+            transform: rotate(-45deg);
+            transition: transform 0.2s;
+            position: relative; top: -1px;
         }
-        .file-info {
-            font-size: 13px; font-weight: 500; overflow: hidden;
-            text-overflow: ellipsis; white-space: nowrap; max-width: 270px;
-        }
-        .empty-msg { font-size: 13px; color: #aaa; padding: 12px 0; }
+        details[open] summary::before { transform: rotate(45deg); top: -3px; }
+        summary:hover { color: var(--ink); }
+        summary:hover::before { border-color: var(--ink); }
 
         #log {
-            font-size: 11px; color: #777; margin-top: 14px; text-align: left;
-            width: 100%; overflow-y: auto; max-height: 90px;
-            background: #f4f4f9; padding: 10px; border-radius: 8px;
-            font-family: monospace; line-height: 1.5;
+            margin-top: 10px;
+            overflow-y: auto;
+            max-height: 160px;
+            background: #1a1a1a;
+            color: #aaa;
+            padding: 12px 14px;
+            border-radius: var(--radius);
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            line-height: 1.7;
         }
-
-        .badge {
-            display: inline-block; font-size: 10px; font-weight: 700;
-            padding: 2px 7px; border-radius: 20px; margin-left: 6px;
-            vertical-align: middle;
-        }
-        .badge-connected { background: #d4f5e2; color: #1a7a40; }
-        .badge-disconnected { background: #f5d4d4; color: #7a1a1a; }
+        #log .ts   { color: #444; }
+        #log .ok   { color: #00b284; }
+        #log .err  { color: #ff6b6b; }
+        #log .warn { color: #ffaa55; }
     </style>
 </head>
 <body>
 
-<div class="card">
-    <h2>📖 E-Reader Manager</h2>
-    <p class="subtitle">Send EPUB books to your device over Bluetooth</p>
+<div class="topbar">
+    <div class="topbar-brand">Mini <span>Ink</span>Book</div>
+    <div id="connPill" class="conn-pill disconnected">Not connected</div>
+</div>
 
-    <!-- ── Connect Section ──────────────────────────── -->
-    <button id="bleConnectBtn">🔗 Connect to E-Reader</button>
+<div class="page">
+    <h1 class="page-title">Device Manager</h1>
+    <p class="page-sub">Transfer EPUB books to your e-ink reader via Bluetooth</p>
 
-    <progress id="progressBar" value="0" max="100"></progress>
-    <div id="status">Status: Not connected
-        <span id="connBadge" class="badge badge-disconnected">●</span>
-    </div>
-
-    <hr>
-
-    <!-- ── Upload Section ───────────────────────────── -->
-    <div class="file-select-row">
-        <button id="selectBtn" style="flex:1">📂 Choose EPUB</button>
-        <button id="uploadBtn" disabled style="flex:1">⬆ Upload</button>
-    </div>
-    <div id="selectedFile">No file selected</div>
-    <input type="file" id="fileInput" accept=".epub" style="display:none">
-
-    <hr>
-
-    <!-- ── Management Section ───────────────────────── -->
-    <button id="manageBtn" class="secondary">📚 Manage Library on Device</button>
-
-    <div id="fileListSection" class="file-list">
-        <div class="file-list-header">
-            <h3>Books on Device</h3>
-            <button id="refreshBtn" class="secondary"
-                    style="width:auto;padding:6px 12px;font-size:12px">↻ Refresh</button>
+    <!-- Connection -->
+    <div class="section">
+        <div class="section-header">
+            <div class="section-label">Bluetooth Connection</div>
         </div>
-        <div id="fileContainer"></div>
+        <div class="section-body">
+            <div class="status-row">
+                <div id="statusDot" class="status-dot"></div>
+                <div id="statusText" class="status-text">Not connected</div>
+            </div>
+            <button id="bleConnectBtn" class="btn btn-primary">Connect to Device</button>
+        </div>
     </div>
 
-    <div id="log"></div>
+    <!-- Upload -->
+    <div class="section">
+        <div class="section-header">
+            <div class="section-label">Send Book</div>
+        </div>
+        <div class="section-body">
+            <div class="btn-row">
+                <button id="selectBtn" class="btn btn-outline">Choose EPUB</button>
+                <button id="uploadBtn" class="btn btn-primary" disabled>Send to Device</button>
+            </div>
+            <input type="file" id="fileInput" accept=".epub" style="display:none">
+            <div class="file-info-box" id="fileInfoBox">
+                <span class="file-placeholder">No file selected</span>
+            </div>
+            <div class="progress-wrap" id="progressWrap">
+                <div class="progress-label">
+                    <span>Uploading</span>
+                    <span id="progressPct">0%</span>
+                </div>
+                <progress id="progressBar" value="0" max="100"></progress>
+            </div>
+        </div>
+    </div>
+
+    <!-- Library -->
+    <div class="section">
+        <div class="section-header">
+            <div class="section-label">Device Library</div>
+        </div>
+        <div class="section-body">
+            <button id="manageBtn" class="btn btn-outline">Load Books from Device</button>
+            <div class="book-list" id="fileListSection">
+                <hr class="divider">
+                <div class="book-list-header">
+                    <span class="book-list-title">Books on device</span>
+                    <button id="refreshBtn" class="btn btn-ghost">Refresh</button>
+                </div>
+                <div id="fileContainer"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Diagnostics -->
+    <details>
+        <summary>Diagnostics log</summary>
+        <div id="log"></div>
+    </details>
 </div>
 
 <script>
-// ── UUIDs (must match ESP32 firmware) ──────────────────────────────────────
 const SERVICE_UUID     = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
 const UPLOAD_CHAR_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
 const LIST_CHAR_UUID   = "beb5483e-36e1-4688-b7f5-ea07361b26a9";
 const DELETE_CHAR_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26aa";
-const CHUNK_SIZE       = 512;   // bytes per BLE write — match ESP32 MTU
+const CHUNK_SIZE       = 512;
 
-// ── State ──────────────────────────────────────────────────────────────────
-let cleanText  = "";
-let fileName   = "";
-let bleDevice  = null;
-let bleServer  = null;
+let cleanText = "";
+let fileName  = "";
+let bleDevice = null;
+let bleServer = null;
 
-// ── Helpers ────────────────────────────────────────────────────────────────
-const logEl    = document.getElementById('log');
-const statusEl = document.getElementById('status');
-const badgeEl  = document.getElementById('connBadge');
+const logEl      = document.getElementById('log');
+const statusDot  = document.getElementById('statusDot');
+const statusText = document.getElementById('statusText');
+const connPill   = document.getElementById('connPill');
 
-function log(msg) {
-    const ts = new Date().toLocaleTimeString();
-    logEl.innerHTML += `<span style="color:#aaa">[${ts}]</span> ${msg}<br>`;
-    logEl.scrollTop = logEl.scrollHeight;
+function log(msg, type = '') {
+    const ts  = new Date().toLocaleTimeString();
+    const cls = type ? ` class="${type}"` : '';
+    logEl.innerHTML += `<span class="ts">[${ts}]</span><span${cls}> ${msg}</span><br>`;
+    logEl.scrollTop  = logEl.scrollHeight;
 }
 
 function setStatus(msg, type = '') {
-    statusEl.className = type ? `status-${type}` : '';
-    statusEl.innerHTML = `Status: ${msg} `;
-    statusEl.appendChild(badgeEl);
+    statusText.textContent = msg;
+    statusDot.className    = 'status-dot' + (type ? ` ${type}` : '');
 }
 
-function setBadge(connected) {
-    badgeEl.className = `badge badge-${connected ? 'connected' : 'disconnected'}`;
-    badgeEl.textContent = connected ? '● Connected' : '● Disconnected';
+function setConnected(connected) {
+    connPill.textContent = connected ? 'Connected' : 'Not connected';
+    connPill.className   = `conn-pill ${connected ? 'connected' : 'disconnected'}`;
+    const btn = document.getElementById('bleConnectBtn');
+    btn.textContent = connected ? 'Disconnect' : 'Connect to Device';
+    btn.className   = connected ? 'btn btn-disconnect' : 'btn btn-primary';
 }
 
 // ── EPUB Parsing ───────────────────────────────────────────────────────────
@@ -180,14 +441,14 @@ document.getElementById('fileInput').onchange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    document.getElementById('selectedFile').textContent = `📄 ${file.name}`;
-    setStatus('Processing EPUB…', 'busy');
+    document.getElementById('fileInfoBox').innerHTML =
+        `<span class="file-placeholder">Processing ${file.name}...</span>`;
+    setStatus('Processing EPUB...', 'busy');
     log(`Parsing: ${file.name}`);
 
     try {
         const zip = await JSZip.loadAsync(file);
 
-        // ── 1. Find the OPF file (via META-INF/container.xml or fallback scan) ──
         let opfEntry = null;
         const containerFile = zip.files['META-INF/container.xml'];
         if (containerFile) {
@@ -198,39 +459,31 @@ document.getElementById('fileInput').onchange = async (e) => {
         }
         if (!opfEntry) opfEntry = Object.keys(zip.files).find(n => n.endsWith('.opf'));
 
-        let bookTitle  = file.name.replace(/\.epub$/i, '');  // fallback
+        let bookTitle  = file.name.replace(/\.epub$/i, '');
         let bookAuthor = '';
-        let spineOrder = [];   // array of { path, label } objects
+        let spineOrder = [];
         const base = opfEntry && opfEntry.includes('/')
             ? opfEntry.substring(0, opfEntry.lastIndexOf('/') + 1) : '';
 
         if (opfEntry && zip.files[opfEntry]) {
-            const opfXml  = await zip.files[opfEntry].async("string");
-            const parser  = new DOMParser();
-            const opfDoc  = parser.parseFromString(opfXml, "text/xml");
+            const opfXml = await zip.files[opfEntry].async("string");
+            const opfDoc = new DOMParser().parseFromString(opfXml, "text/xml");
 
-            // ── 2. Extract title & author from Dublin Core metadata ──
-            const dcTitle = opfDoc.querySelector(
-                "metadata > title, metadata > *|title, dc\\:title");
-            if (dcTitle && dcTitle.textContent.trim())
-                bookTitle = dcTitle.textContent.trim();
+            const dcTitle   = opfDoc.querySelector("metadata > title, metadata > *|title, dc\\:title");
+            if (dcTitle?.textContent?.trim()) bookTitle = dcTitle.textContent.trim();
+            const dcCreator = opfDoc.querySelector("metadata > creator, metadata > *|creator, dc\\:creator");
+            if (dcCreator?.textContent?.trim()) bookAuthor = dcCreator.textContent.trim();
 
-            const dcCreator = opfDoc.querySelector(
-                "metadata > creator, metadata > *|creator, dc\\:creator");
-            if (dcCreator && dcCreator.textContent.trim())
-                bookAuthor = dcCreator.textContent.trim();
-
-            // ── 3. Build manifest id→href map ──
             const items = {};
             opfDoc.querySelectorAll("manifest item").forEach(el => {
                 items[el.getAttribute("id")] = el.getAttribute("href");
             });
 
-            // ── 4. Try to get chapter labels from NCX (EPUB2) ──
-            const ncxLabels = {};  // href basename → label
-            const ncxId  = opfDoc.querySelector("spine")?.getAttribute("toc");
+            const ncxLabels = {};
+            const ncxId   = opfDoc.querySelector("spine")?.getAttribute("toc");
             const ncxHref = ncxId ? items[ncxId] : null;
-            const ncxPath = ncxHref ? base + ncxHref : Object.keys(zip.files).find(n => n.endsWith('.ncx'));
+            const ncxPath = ncxHref ? base + ncxHref
+                : Object.keys(zip.files).find(n => n.endsWith('.ncx'));
             if (ncxPath && zip.files[ncxPath]) {
                 const ncxXml = await zip.files[ncxPath].async("string");
                 const ncxDoc = new DOMParser().parseFromString(ncxXml, "text/xml");
@@ -242,13 +495,11 @@ document.getElementById('fileInput').onchange = async (e) => {
                         ncxLabels[key] = label;
                     }
                 });
-                log(`NCX: found ${Object.keys(ncxLabels).length} chapter labels`);
+                log(`NCX: ${Object.keys(ncxLabels).length} chapter labels`);
             }
 
-            // ── 5. Try to get chapter labels from EPUB3 NAV document ──
             const navEntry = Object.keys(zip.files).find(n =>
-                (n.endsWith('.xhtml') || n.endsWith('.html')) &&
-                zip.files[n] && n.toLowerCase().includes('nav'));
+                (n.endsWith('.xhtml') || n.endsWith('.html')) && n.toLowerCase().includes('nav'));
             if (navEntry && zip.files[navEntry] && Object.keys(ncxLabels).length === 0) {
                 const navHtml = await zip.files[navEntry].async("string");
                 const navDoc  = new DOMParser().parseFromString(navHtml, 'text/html');
@@ -260,172 +511,156 @@ document.getElementById('fileInput').onchange = async (e) => {
                         if (!ncxLabels[key]) ncxLabels[key] = label;
                     }
                 });
-                log(`NAV: found ${Object.keys(ncxLabels).length} chapter labels`);
+                log(`NAV: ${Object.keys(ncxLabels).length} chapter labels`);
             }
 
-            // ── 6. Build spine with labels ──
             opfDoc.querySelectorAll("spine itemref").forEach(el => {
                 const href = items[el.getAttribute("idref")];
                 if (!href) return;
-                const fullPath = base + href;
                 const key = href.includes('/') ? href.substring(href.lastIndexOf('/') + 1) : href;
-                spineOrder.push({ path: fullPath, label: ncxLabels[key] || null });
+                spineOrder.push({ path: base + href, label: ncxLabels[key] || null });
             });
         }
 
-        // Fallback if spine is empty
         if (spineOrder.length === 0) {
             spineOrder = Object.keys(zip.files)
                 .filter(fn => fn.endsWith('.xhtml') || fn.endsWith('.html'))
-                .sort()
-                .map(path => ({ path, label: null }));
+                .sort().map(path => ({ path, label: null }));
         }
 
-        // ── 7. Extract text, inserting chapter markers ──
         let text = "";
         let chapterCount = 0;
         for (const { path, label } of spineOrder) {
             const entry = zip.files[path] || zip.files[decodeURIComponent(path)];
             if (!entry) continue;
-            const html  = await entry.async("string");
-            const doc   = new DOMParser().parseFromString(html, 'text/html');
+            const html     = await entry.async("string");
+            const doc      = new DOMParser().parseFromString(html, 'text/html');
             doc.querySelectorAll('nav, script, style, head').forEach(el => el.remove());
             const bodyText = doc.body ? doc.body.textContent.trim() : "";
             if (!bodyText) continue;
-
-            if (label) {
-                chapterCount++;
-                text += `\n\n=== ${label} ===\n\n`;
-            }
+            if (label) { chapterCount++; text += `\n\n=== ${label} ===\n\n`; }
             text += bodyText + "\n\n";
         }
 
-        // Normalise whitespace
-        cleanText = text.replace(/[ \t]+/g, ' ')
-                        .replace(/\n{3,}/g, '\n\n')
-                        .trim();
+        let normalized = text.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
 
-        // Use clean title as filename
-        const safeTitle = bookTitle.replace(/[^a-zA-Z0-9 \-_]/g, '').trim() || 'book';
+        cleanText = normalized
+            .replace(/[\u2018\u2019\u201A\u201B\u2032\u2035]/g, "'")
+            .replace(/[\u201C\u201D\u201E\u201F\u2033\u2036]/g, '"')
+            .replace(/[\u2013\u2014\u2015]/g, '--').replace(/\u2012/g, '-')
+            .replace(/\u2026/g, '...')
+            .replace(/[\u00A0\u202F\u2007\u2009\u200A]/g, ' ')
+            .replace(/[\u2022\u2023\u2043\u204C\u204D]/g, '*')
+            .replace(/\u2044/g, '/').replace(/[\u2039\u203A]/g, m => m === '\u2039' ? '<' : '>')
+            .replace(/\uFB00/g,'ff').replace(/\uFB01/g,'fi').replace(/\uFB02/g,'fl')
+            .replace(/\uFB03/g,'ffi').replace(/\uFB04/g,'ffl')
+            .replace(/[àáâãäåāăą]/g,'a').replace(/[ÀÁÂÃÄÅĀĂĄ]/g,'A')
+            .replace(/[èéêëēĕęě]/g,'e').replace(/[ÈÉÊËĒĔĘĚ]/g,'E')
+            .replace(/[ìíîïīĭįı]/g,'i').replace(/[ÌÍÎÏĪĬĮ]/g,'I')
+            .replace(/[òóôõöøōŏő]/g,'o').replace(/[ÒÓÔÕÖØŌŎŐ]/g,'O')
+            .replace(/[ùúûüūŭůű]/g,'u').replace(/[ÙÚÛÜŪŬŮŰ]/g,'U')
+            .replace(/[ýÿ]/g,'y').replace(/[ÝŸ]/g,'Y').replace(/[ñ]/g,'n').replace(/[Ñ]/g,'N')
+            .replace(/[çćĉċč]/g,'c').replace(/[ÇĆĈĊČ]/g,'C')
+            .replace(/[ß]/g,'ss').replace(/[æ]/g,'ae').replace(/[Æ]/g,'AE')
+            .replace(/[œ]/g,'oe').replace(/[Œ]/g,'OE')
+            .replace(/[ð]/g,'d').replace(/[Ð]/g,'D').replace(/[þ]/g,'th').replace(/[Þ]/g,'Th')
+            .replace(/[\u200B\u200C\u200D\uFEFF]/g,'')
+            .replace(/[^\x09\x0A\x20-\x7E]/g,'');
+
+        const stripped = normalized.length - cleanText.length;
+        if (stripped > 0) log(`Sanitized ${stripped} non-ASCII characters.`, 'warn');
+
+        const safeTitle = bookTitle.replace(/[^a-zA-Z0-9 \-_]/g,'').trim() || 'book';
         fileName = safeTitle + '.txt';
 
-        // Update UI with discovered metadata
-        const authorStr = bookAuthor ? ` by ${bookAuthor}` : '';
-        document.getElementById('selectedFile').innerHTML =
-            `📖 <strong>${bookTitle}</strong>${authorStr}<br>` +
-            `<span style="color:#aaa;font-size:11px">${file.name} · ${chapterCount} chapters · ${(cleanText.length/1024).toFixed(1)} KB</span>`;
+        document.getElementById('fileInfoBox').innerHTML =
+            `<div class="file-title">${bookTitle}</div>` +
+            `<div class="file-meta">${bookAuthor ? bookAuthor + ' &middot; ' : ''}${chapterCount} chapters &middot; ${(cleanText.length/1024).toFixed(1)} KB</div>`;
 
-        setStatus(`Ready — "${bookTitle}"`, 'ok');
+        setStatus('Ready to send', 'ok');
         document.getElementById('uploadBtn').disabled = !bleDevice?.gatt?.connected;
-        log(`Title: "${bookTitle}"${authorStr}`);
-        log(`Chapters: ${chapterCount} · Characters: ${cleanText.length.toLocaleString()}`);
-        log(`Will upload as: ${fileName}`);
+        log(`Title: "${bookTitle}"${bookAuthor ? ' by ' + bookAuthor : ''}`, 'ok');
+        log(`${chapterCount} chapters, ${cleanText.length.toLocaleString()} characters`);
+        log(`Will send as: ${fileName}`);
+
     } catch (err) {
-        log(`Error: ${err.message}`);
+        log(`Parse error: ${err.message}`, 'err');
         setStatus('EPUB parsing failed', 'error');
+        document.getElementById('fileInfoBox').innerHTML =
+            `<span class="file-placeholder">Error reading file — check log</span>`;
     }
 };
 
 // ── BLE Connection ─────────────────────────────────────────────────────────
-function updateConnectBtn(connected) {
-    const btn = document.getElementById('bleConnectBtn');
-    if (connected) {
-        btn.textContent = '✕ Disconnect';
-        btn.style.background = '#FF3B30';
-    } else {
-        btn.textContent = '🔗 Connect to E-Reader';
-        btn.style.background = '';
-    }
-}
-
 document.getElementById('bleConnectBtn').onclick = async () => {
-    if (bleDevice?.gatt?.connected) {
-        bleDevice.gatt.disconnect();
-        return;
-    }
+    if (bleDevice?.gatt?.connected) { bleDevice.gatt.disconnect(); return; }
 
-    // ── Pre-flight diagnostics ──────────────────────────────────────────
     if (!window.isSecureContext) {
-        log('❌ Page is not served over HTTPS. Web Bluetooth requires a secure context.');
-        setStatus('HTTPS required', 'error');
-        return;
+        log('Page must be served over HTTPS for Web Bluetooth.', 'err');
+        setStatus('HTTPS required', 'error'); return;
     }
     if (!navigator.bluetooth) {
-        log('❌ navigator.bluetooth is undefined.');
-        log('   • If on Android+Chrome: go to Android Settings → Apps → Chrome → Permissions and enable "Nearby devices" and "Location".');
-        log('   • Check chrome://flags and ensure Web Bluetooth is not Disabled.');
-        setStatus('Web Bluetooth unavailable', 'error');
-        return;
+        log('Web Bluetooth unavailable. In Chrome: Settings > Apps > Chrome > Permissions, enable Nearby Devices and Location.', 'err');
+        setStatus('Bluetooth unavailable', 'error'); return;
     }
     let btAvailable = false;
     try { btAvailable = await navigator.bluetooth.getAvailability(); } catch(e) {}
     if (!btAvailable) {
-        log('❌ Bluetooth reports as unavailable on this device. Is Bluetooth turned on in Android quick settings?');
-        setStatus('Bluetooth off or blocked', 'error');
-        return;
+        log('Bluetooth is off or blocked. Enable it in Android quick settings.', 'err');
+        setStatus('Bluetooth off', 'error'); return;
     }
-    log('✅ Pre-flight OK — opening device picker…');
-    // ───────────────────────────────────────────────────────────────────
-
+    log('Pre-flight OK — opening device picker...');
     await ensureConnected();
 };
 
 async function ensureConnected() {
     if (bleDevice?.gatt?.connected) return true;
-
     try {
-        setStatus('Requesting device…', 'busy');
+        setStatus('Searching for device...', 'busy');
         bleDevice = await navigator.bluetooth.requestDevice({
             filters: [{ name: 'S3-Reader-BLE' }],
             optionalServices: [SERVICE_UUID]
         });
-
         bleDevice.addEventListener('gattserverdisconnected', () => {
             setStatus('Disconnected', 'error');
-            setBadge(false);
-            updateConnectBtn(false);
+            setConnected(false);
             document.getElementById('uploadBtn').disabled = true;
             document.getElementById('fileListSection').style.display = 'none';
-            log('Device disconnected.');
+            log('Device disconnected.', 'warn');
         });
-
-        setStatus('Connecting…', 'busy');
+        setStatus('Connecting...', 'busy');
         bleServer = await bleDevice.gatt.connect();
-        setBadge(true);
-        updateConnectBtn(true);
-        setStatus('Connected', 'ok');
-        log('Connected to S3-Reader-BLE');
+        setConnected(true);
+        setStatus('Connected to S3-Reader-BLE', 'ok');
+        log('Connected to S3-Reader-BLE', 'ok');
         if (cleanText) document.getElementById('uploadBtn').disabled = false;
         return true;
     } catch (err) {
-        log(`Connection error: ${err.message}`);
+        log(`Connection failed: ${err.message}`, 'err');
         setStatus('Connection failed', 'error');
-        setBadge(false);
-        updateConnectBtn(false);
+        setConnected(false);
         return false;
     }
 }
 
 // ── Upload ─────────────────────────────────────────────────────────────────
 document.getElementById('uploadBtn').onclick = async () => {
-    if (!cleanText) { log('No EPUB loaded.'); return; }
+    if (!cleanText) { log('No EPUB loaded.', 'warn'); return; }
     if (!await ensureConnected()) return;
-
     try {
         const service = await bleServer.getPrimaryService(SERVICE_UUID);
         const char    = await service.getCharacteristic(UPLOAD_CHAR_UUID);
 
-        setStatus('Uploading…', 'busy');
+        setStatus('Uploading...', 'busy');
+        const wrap = document.getElementById('progressWrap');
         const prog = document.getElementById('progressBar');
-        prog.style.display = 'block';
+        const pct  = document.getElementById('progressPct');
+        wrap.style.display = 'block';
         prog.value = 0;
 
-        // First chunk carries filename prefix: "name.txt|<text start>"
-        const encoder = new TextEncoder();
-        const prefix  = encoder.encode(fileName + "|");
-        const body    = encoder.encode(cleanText);
-
-        // Merge into one Uint8Array
+        const encoder  = new TextEncoder();
+        const prefix   = encoder.encode(fileName + "|");
+        const body     = encoder.encode(cleanText);
         const combined = new Uint8Array(prefix.length + body.length);
         combined.set(prefix, 0);
         combined.set(body, prefix.length);
@@ -434,17 +669,17 @@ document.getElementById('uploadBtn').onclick = async () => {
         for (let i = 0; i < total; i += CHUNK_SIZE) {
             const chunk = combined.slice(i, i + CHUNK_SIZE);
             await char.writeValue(chunk);
-            prog.value = Math.round(((i + chunk.length) / total) * 100);
-            // Small yield to keep UI alive
+            const p = Math.round(((i + chunk.length) / total) * 100);
+            prog.value = p; pct.textContent = p + '%';
             if (i % (CHUNK_SIZE * 20) === 0) await new Promise(r => setTimeout(r, 10));
         }
 
-        setStatus('Upload complete! ✓', 'ok');
-        log(`Sent "${fileName}" (${(total/1024).toFixed(1)} KB)`);
-        prog.value = 100;
-        setTimeout(() => { prog.style.display = 'none'; }, 2000);
+        setStatus('Transfer complete', 'ok');
+        log(`Sent "${fileName}" (${(total/1024).toFixed(1)} KB)`, 'ok');
+        prog.value = 100; pct.textContent = '100%';
+        setTimeout(() => { wrap.style.display = 'none'; }, 3000);
     } catch (err) {
-        log(`Upload error: ${err.message}`);
+        log(`Upload failed: ${err.message}`, 'err');
         setStatus('Upload failed', 'error');
     }
 };
@@ -452,12 +687,10 @@ document.getElementById('uploadBtn').onclick = async () => {
 // ── Library Management ─────────────────────────────────────────────────────
 async function fetchFiles() {
     if (!await ensureConnected()) return;
-
     try {
-        setStatus('Fetching library…', 'busy');
+        setStatus('Loading library...', 'busy');
         const service = await bleServer.getPrimaryService(SERVICE_UUID);
         const char    = await service.getCharacteristic(LIST_CHAR_UUID);
-
         const value   = await char.readValue();
         const list    = new TextDecoder().decode(value);
 
@@ -466,7 +699,7 @@ async function fetchFiles() {
         document.getElementById('fileListSection').style.display = 'block';
 
         if (!list.trim()) {
-            container.innerHTML = '<p class="empty-msg">No books found on device.</p>';
+            container.innerHTML = '<p class="empty-msg">No books on device</p>';
             setStatus('Library empty', '');
             return;
         }
@@ -474,37 +707,36 @@ async function fetchFiles() {
         const files = list.split(',').filter(Boolean);
         files.forEach(title => {
             const item = document.createElement('div');
-            item.className = 'file-item';
+            item.className = 'book-item';
             item.innerHTML = `
-                <div class="file-info">📖 ${title}</div>
-                <button class="danger" data-title="${title}">Delete</button>
+                <div class="book-item-title">${title}</div>
+                <button class="btn-delete" data-title="${title}">Remove</button>
             `;
-            item.querySelector('.danger').onclick = () => deleteFile(title);
+            item.querySelector('.btn-delete').onclick = () => deleteFile(title);
             container.appendChild(item);
         });
 
         setStatus(`${files.length} book${files.length !== 1 ? 's' : ''} on device`, 'ok');
-        log(`Found ${files.length} book(s).`);
+        log(`Library: ${files.length} book(s)`, 'ok');
     } catch (err) {
-        log(`Fetch error: ${err.message}`);
+        log(`Library fetch failed: ${err.message}`, 'err');
         setStatus('Fetch failed', 'error');
     }
 }
 
 async function deleteFile(title) {
-    if (!confirm(`Delete "${title}" from the device?`)) return;
-
+    if (!confirm(`Remove "${title}" from the device?`)) return;
     try {
-        setStatus(`Deleting "${title}"…`, 'busy');
+        setStatus(`Removing...`, 'busy');
         const service = await bleServer.getPrimaryService(SERVICE_UUID);
         const char    = await service.getCharacteristic(DELETE_CHAR_UUID);
         await char.writeValue(new TextEncoder().encode(title));
-        log(`Deleted: ${title}`);
+        log(`Removed: ${title}`, 'ok');
         await new Promise(r => setTimeout(r, 300));
         fetchFiles();
     } catch (err) {
-        log(`Delete error: ${err.message}`);
-        setStatus('Delete failed', 'error');
+        log(`Remove failed: ${err.message}`, 'err');
+        setStatus('Remove failed', 'error');
     }
 }
 
