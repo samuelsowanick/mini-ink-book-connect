@@ -101,18 +101,23 @@
     <h2>📖 E-Reader Manager</h2>
     <p class="subtitle">Send EPUB books to your device over Bluetooth</p>
 
-    <!-- ── Upload Section ───────────────────────────── -->
-    <div class="file-select-row">
-        <button id="selectBtn" style="flex:1">📂 Choose EPUB</button>
-        <button id="connectBtn" disabled style="flex:1">⬆ Upload</button>
-    </div>
-    <div id="selectedFile">No file selected</div>
-    <input type="file" id="fileInput" accept=".epub" style="display:none">
+    <!-- ── Connect Section ──────────────────────────── -->
+    <button id="bleConnectBtn">🔗 Connect to E-Reader</button>
 
     <progress id="progressBar" value="0" max="100"></progress>
     <div id="status">Status: Not connected
         <span id="connBadge" class="badge badge-disconnected">●</span>
     </div>
+
+    <hr>
+
+    <!-- ── Upload Section ───────────────────────────── -->
+    <div class="file-select-row">
+        <button id="selectBtn" style="flex:1">📂 Choose EPUB</button>
+        <button id="uploadBtn" disabled style="flex:1">⬆ Upload</button>
+    </div>
+    <div id="selectedFile">No file selected</div>
+    <input type="file" id="fileInput" accept=".epub" style="display:none">
 
     <hr>
 
@@ -230,7 +235,7 @@ document.getElementById('fileInput').onchange = async (e) => {
                         .trim();
 
         setStatus(`Ready — ${(cleanText.length / 1024).toFixed(1)} KB`, 'ok');
-        document.getElementById('connectBtn').disabled = false;
+        document.getElementById('uploadBtn').disabled = !bleDevice?.gatt?.connected;
         log(`Parsed ${cleanText.length.toLocaleString()} characters.`);
     } catch (err) {
         log(`Error: ${err.message}`);
@@ -239,6 +244,25 @@ document.getElementById('fileInput').onchange = async (e) => {
 };
 
 // ── BLE Connection ─────────────────────────────────────────────────────────
+function updateConnectBtn(connected) {
+    const btn = document.getElementById('bleConnectBtn');
+    if (connected) {
+        btn.textContent = '✕ Disconnect';
+        btn.style.background = '#FF3B30';
+    } else {
+        btn.textContent = '🔗 Connect to E-Reader';
+        btn.style.background = '';
+    }
+}
+
+document.getElementById('bleConnectBtn').onclick = async () => {
+    if (bleDevice?.gatt?.connected) {
+        bleDevice.gatt.disconnect();
+        return;
+    }
+    await ensureConnected();
+};
+
 async function ensureConnected() {
     if (bleDevice?.gatt?.connected) return true;
 
@@ -252,6 +276,8 @@ async function ensureConnected() {
         bleDevice.addEventListener('gattserverdisconnected', () => {
             setStatus('Disconnected', 'error');
             setBadge(false);
+            updateConnectBtn(false);
+            document.getElementById('uploadBtn').disabled = true;
             document.getElementById('fileListSection').style.display = 'none';
             log('Device disconnected.');
         });
@@ -259,19 +285,22 @@ async function ensureConnected() {
         setStatus('Connecting…', 'busy');
         bleServer = await bleDevice.gatt.connect();
         setBadge(true);
+        updateConnectBtn(true);
         setStatus('Connected', 'ok');
         log('Connected to S3-Reader-BLE');
+        if (cleanText) document.getElementById('uploadBtn').disabled = false;
         return true;
     } catch (err) {
         log(`Connection error: ${err.message}`);
         setStatus('Connection failed', 'error');
         setBadge(false);
+        updateConnectBtn(false);
         return false;
     }
 }
 
 // ── Upload ─────────────────────────────────────────────────────────────────
-document.getElementById('connectBtn').onclick = async () => {
+document.getElementById('uploadBtn').onclick = async () => {
     if (!cleanText) { log('No EPUB loaded.'); return; }
     if (!await ensureConnected()) return;
 
