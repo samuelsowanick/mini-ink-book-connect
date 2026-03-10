@@ -180,7 +180,6 @@ document.getElementById('fileInput').onchange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    fileName = file.name.replace(/\.epub$/i, '.txt');
     document.getElementById('selectedFile').textContent = `📄 ${file.name}`;
     setStatus('Processing EPUB…', 'busy');
     log(`Parsing: ${file.name}`);
@@ -188,45 +187,117 @@ document.getElementById('fileInput').onchange = async (e) => {
     try {
         const zip = await JSZip.loadAsync(file);
 
-        // Parse OPF spine to get reading order
-        let spineOrder = [];
-        const opfEntry = Object.keys(zip.files).find(n => n.endsWith('.opf'));
-        if (opfEntry) {
-            const opfXml = await zip.files[opfEntry].async("string");
-            const parser = new DOMParser();
-            const opfDoc = parser.parseFromString(opfXml, "text/xml");
-            const items  = {};
+        // ── 1. Find the OPF file (via META-INF/container.xml or fallback scan) ──
+        let opfEntry = null;
+        const containerFile = zip.files['META-INF/container.xml'];
+        if (containerFile) {
+            const containerXml = await containerFile.async("string");
+            const containerDoc = new DOMParser().parseFromString(containerXml, "text/xml");
+            const rootfile = containerDoc.querySelector("rootfile");
+            if (rootfile) opfEntry = rootfile.getAttribute("full-path");
+        }
+        if (!opfEntry) opfEntry = Object.keys(zip.files).find(n => n.endsWith('.opf'));
+
+        let bookTitle  = file.name.replace(/\.epub$/i, '');  // fallback
+        let bookAuthor = '';
+        let spineOrder = [];   // array of { path, label } objects
+        const base = opfEntry && opfEntry.includes('/')
+            ? opfEntry.substring(0, opfEntry.lastIndexOf('/') + 1) : '';
+
+        if (opfEntry && zip.files[opfEntry]) {
+            const opfXml  = await zip.files[opfEntry].async("string");
+            const parser  = new DOMParser();
+            const opfDoc  = parser.parseFromString(opfXml, "text/xml");
+
+            // ── 2. Extract title & author from Dublin Core metadata ──
+            const dcTitle = opfDoc.querySelector(
+                "metadata > title, metadata > *|title, dc\\:title");
+            if (dcTitle && dcTitle.textContent.trim())
+                bookTitle = dcTitle.textContent.trim();
+
+            const dcCreator = opfDoc.querySelector(
+                "metadata > creator, metadata > *|creator, dc\\:creator");
+            if (dcCreator && dcCreator.textContent.trim())
+                bookAuthor = dcCreator.textContent.trim();
+
+            // ── 3. Build manifest id→href map ──
+            const items = {};
             opfDoc.querySelectorAll("manifest item").forEach(el => {
                 items[el.getAttribute("id")] = el.getAttribute("href");
             });
+
+            // ── 4. Try to get chapter labels from NCX (EPUB2) ──
+            const ncxLabels = {};  // href basename → label
+            const ncxId  = opfDoc.querySelector("spine")?.getAttribute("toc");
+            const ncxHref = ncxId ? items[ncxId] : null;
+            const ncxPath = ncxHref ? base + ncxHref : Object.keys(zip.files).find(n => n.endsWith('.ncx'));
+            if (ncxPath && zip.files[ncxPath]) {
+                const ncxXml = await zip.files[ncxPath].async("string");
+                const ncxDoc = new DOMParser().parseFromString(ncxXml, "text/xml");
+                ncxDoc.querySelectorAll("navPoint").forEach(np => {
+                    const label = np.querySelector("navLabel > text")?.textContent?.trim();
+                    const src   = np.querySelector("content")?.getAttribute("src")?.split('#')[0];
+                    if (label && src) {
+                        const key = src.includes('/') ? src.substring(src.lastIndexOf('/') + 1) : src;
+                        ncxLabels[key] = label;
+                    }
+                });
+                log(`NCX: found ${Object.keys(ncxLabels).length} chapter labels`);
+            }
+
+            // ── 5. Try to get chapter labels from EPUB3 NAV document ──
+            const navEntry = Object.keys(zip.files).find(n =>
+                (n.endsWith('.xhtml') || n.endsWith('.html')) &&
+                zip.files[n] && n.toLowerCase().includes('nav'));
+            if (navEntry && zip.files[navEntry] && Object.keys(ncxLabels).length === 0) {
+                const navHtml = await zip.files[navEntry].async("string");
+                const navDoc  = new DOMParser().parseFromString(navHtml, 'text/html');
+                navDoc.querySelectorAll('nav[epub\\:type="toc"] a, nav a').forEach(a => {
+                    const label = a.textContent.trim();
+                    const href  = a.getAttribute('href')?.split('#')[0];
+                    if (label && href) {
+                        const key = href.includes('/') ? href.substring(href.lastIndexOf('/') + 1) : href;
+                        if (!ncxLabels[key]) ncxLabels[key] = label;
+                    }
+                });
+                log(`NAV: found ${Object.keys(ncxLabels).length} chapter labels`);
+            }
+
+            // ── 6. Build spine with labels ──
             opfDoc.querySelectorAll("spine itemref").forEach(el => {
                 const href = items[el.getAttribute("idref")];
-                if (href) {
-                    // Resolve relative to OPF location
-                    const base = opfEntry.includes('/') ?
-                        opfEntry.substring(0, opfEntry.lastIndexOf('/') + 1) : '';
-                    spineOrder.push(base + href);
-                }
+                if (!href) return;
+                const fullPath = base + href;
+                const key = href.includes('/') ? href.substring(href.lastIndexOf('/') + 1) : href;
+                spineOrder.push({ path: fullPath, label: ncxLabels[key] || null });
             });
         }
 
-        // Fall back to sorted html/xhtml files if spine parsing fails
+        // Fallback if spine is empty
         if (spineOrder.length === 0) {
             spineOrder = Object.keys(zip.files)
                 .filter(fn => fn.endsWith('.xhtml') || fn.endsWith('.html'))
-                .sort();
+                .sort()
+                .map(path => ({ path, label: null }));
         }
 
+        // ── 7. Extract text, inserting chapter markers ──
         let text = "";
-        for (const fn of spineOrder) {
-            // Try exact match, then URL-decoded
-            const entry = zip.files[fn] || zip.files[decodeURIComponent(fn)];
+        let chapterCount = 0;
+        for (const { path, label } of spineOrder) {
+            const entry = zip.files[path] || zip.files[decodeURIComponent(path)];
             if (!entry) continue;
-            const html = await entry.async("string");
-            const doc  = new DOMParser().parseFromString(html, 'text/html');
-            // Remove nav/script/style noise
+            const html  = await entry.async("string");
+            const doc   = new DOMParser().parseFromString(html, 'text/html');
             doc.querySelectorAll('nav, script, style, head').forEach(el => el.remove());
-            text += doc.body ? doc.body.textContent.trim() + "\n\n" : "";
+            const bodyText = doc.body ? doc.body.textContent.trim() : "";
+            if (!bodyText) continue;
+
+            if (label) {
+                chapterCount++;
+                text += `\n\n=== ${label} ===\n\n`;
+            }
+            text += bodyText + "\n\n";
         }
 
         // Normalise whitespace
@@ -234,9 +305,21 @@ document.getElementById('fileInput').onchange = async (e) => {
                         .replace(/\n{3,}/g, '\n\n')
                         .trim();
 
-        setStatus(`Ready — ${(cleanText.length / 1024).toFixed(1)} KB`, 'ok');
+        // Use clean title as filename
+        const safeTitle = bookTitle.replace(/[^a-zA-Z0-9 \-_]/g, '').trim() || 'book';
+        fileName = safeTitle + '.txt';
+
+        // Update UI with discovered metadata
+        const authorStr = bookAuthor ? ` by ${bookAuthor}` : '';
+        document.getElementById('selectedFile').innerHTML =
+            `📖 <strong>${bookTitle}</strong>${authorStr}<br>` +
+            `<span style="color:#aaa;font-size:11px">${file.name} · ${chapterCount} chapters · ${(cleanText.length/1024).toFixed(1)} KB</span>`;
+
+        setStatus(`Ready — "${bookTitle}"`, 'ok');
         document.getElementById('uploadBtn').disabled = !bleDevice?.gatt?.connected;
-        log(`Parsed ${cleanText.length.toLocaleString()} characters.`);
+        log(`Title: "${bookTitle}"${authorStr}`);
+        log(`Chapters: ${chapterCount} · Characters: ${cleanText.length.toLocaleString()}`);
+        log(`Will upload as: ${fileName}`);
     } catch (err) {
         log(`Error: ${err.message}`);
         setStatus('EPUB parsing failed', 'error');
@@ -260,6 +343,30 @@ document.getElementById('bleConnectBtn').onclick = async () => {
         bleDevice.gatt.disconnect();
         return;
     }
+
+    // ── Pre-flight diagnostics ──────────────────────────────────────────
+    if (!window.isSecureContext) {
+        log('❌ Page is not served over HTTPS. Web Bluetooth requires a secure context.');
+        setStatus('HTTPS required', 'error');
+        return;
+    }
+    if (!navigator.bluetooth) {
+        log('❌ navigator.bluetooth is undefined.');
+        log('   • If on Android+Chrome: go to Android Settings → Apps → Chrome → Permissions and enable "Nearby devices" and "Location".');
+        log('   • Check chrome://flags and ensure Web Bluetooth is not Disabled.');
+        setStatus('Web Bluetooth unavailable', 'error');
+        return;
+    }
+    let btAvailable = false;
+    try { btAvailable = await navigator.bluetooth.getAvailability(); } catch(e) {}
+    if (!btAvailable) {
+        log('❌ Bluetooth reports as unavailable on this device. Is Bluetooth turned on in Android quick settings?');
+        setStatus('Bluetooth off or blocked', 'error');
+        return;
+    }
+    log('✅ Pre-flight OK — opening device picker…');
+    // ───────────────────────────────────────────────────────────────────
+
     await ensureConnected();
 };
 
