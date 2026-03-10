@@ -33,6 +33,7 @@
  */
 
 #include <Arduino.h>
+#include <Adafruit_GFX.h>
 #include <Fonts/FreeSerif9pt7b.h>
 #include <BLEDevice.h>
 #include <BLEServer.h>
@@ -198,7 +199,6 @@ bool          xlongFired     = false;
 void doUpdate(bool forceFull = false);
 
 void drawSleepQuote();
-void drawChapterSelect();
 void handleChapterSelectInput(BtnEvent e);
 
 void drawCenteredTitle(const char* title);
@@ -494,8 +494,8 @@ void handleOverlayInput(BtnEvent e) {
 }
 
 void handleChapterSelectInput(BtnEvent e) {
-  if (e == BTN_SINGLE) { chapterIndex = (chapterIndex + 1) % chapterCount; drawChapterSelect(); }
-  else if (e == BTN_DOUBLE) { chapterIndex = (chapterIndex - 1 + chapterCount) % chapterCount; drawChapterSelect(); }
+  if (e == BTN_SINGLE) { chapterIndex = (chapterIndex + 1) % chapterCount; drawChapterSelect(false); }
+  else if (e == BTN_DOUBLE) { chapterIndex = (chapterIndex - 1 + chapterCount) % chapterCount; drawChapterSelect(false); }
   else if (e == BTN_LONG) {
     currentPage = chapters[chapterIndex].page;
     books[currentBook].lastPage = currentPage;
@@ -573,6 +573,9 @@ void handleSettingsDeleteBookInput(BtnEvent e) {
     else { deleteBookIndex = 0; drawSettingsDeleteBook(true); }
   }
 }
+
+// ─── Info line count (used in handleInfoInput and drawInfo) ─────────────────
+#define INFO_LINE_COUNT 30
 
 void handleInfoInput(BtnEvent e) {
   int visibleLines = (SCREEN_W - MARGIN_Y*2 - CHAR_H - 8) / (CHAR_H + 1);
@@ -937,7 +940,7 @@ static const char* INFO_LINES[] = {
   "  2 clicks = scroll up",
   "  hold     = back to main menu"
 };
-static const int INFO_LINE_COUNT = 30;
+static const int INFO_LINE_COUNT_CHECK = 30; // matches #define INFO_LINE_COUNT above
 
 void drawInfo() {
   display.clearMemory();
