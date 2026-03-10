@@ -34,7 +34,7 @@
 
 #include <Arduino.h>
 #include <Adafruit_GFX.h>
-#include <Fonts/FreeSerif9pt7b.h>
+#include <Fonts/FreeMono9pt7b.h>
 #include <BLEDevice.h>
 #include <BLEServer.h>
 #include <BLEUtils.h>
@@ -63,10 +63,10 @@ EInkDisplay_VisionMasterE290 display;
 
 // Reading font (FreeSerif9pt7b at textSize 1) — approx 6×14 px per glyph
 // Using pixel-width of 7 for safe word-wrap (some glyphs are wider)
-#define READ_CHAR_W       7
-#define READ_CHAR_H       14
-#define READ_LINE_SPACING 3
-#define READ_CHARS_PER_LINE  ((SCREEN_H - MARGIN_X * 2) / READ_CHAR_W)        // ~40
+#define READ_CHAR_W       11         // exact xAdvance for FreeMono9pt7b
+#define READ_CHAR_H       16         // full cell height including descenders
+#define READ_LINE_SPACING 1          // tighter — mono reads cleanly
+#define READ_CHARS_PER_LINE  ((SCREEN_H - MARGIN_X * 2) / READ_CHAR_W)    // exact: ~26
 #define READ_LINES_PER_PAGE  ((SCREEN_W - MARGIN_Y*2 - CHAR_H - 10) / (READ_CHAR_H + READ_LINE_SPACING))
 
 // ─── Fast-refresh ────────────────────────────────────────────────────────────
@@ -155,7 +155,7 @@ const char* OVERLAY_ITEMS[] = {
   "Bookmark this page",
   "Start from beginning",
   "Return to Main Menu",
-  "Back to book"
+  "...Return to book"
 };
 const int OVERLAY_COUNT = 5;
 int overlayIndex = 0;
@@ -166,7 +166,7 @@ const char* SETTINGS_ITEMS[] = {
   "Delete a book",
   "Delete all books",
   "Reset all progress",
-  "Back"
+  "...Return to Menu"
 };
 const int SETTINGS_COUNT = 5;
 int settingsIndex   = 0;
@@ -761,7 +761,7 @@ void drawLibrary(bool full) {
     display.print("Enable BLE to send .txt files.");
     // Back row
     int y = MARGIN_Y + CHAR_H + 6 + (CHAR_H + 2) * 3;
-    drawRow(MARGIN_X, y, "Back", libIndex == 0);
+    drawRow(MARGIN_X, y, "...Return to Menu", libIndex == 0);
     doUpdate(full); return;
   }
 
@@ -770,7 +770,7 @@ void drawLibrary(bool full) {
   int y = MARGIN_Y + CHAR_H + 6;
   for (int i = windowStart; i < min(windowStart + LIB_VISIBLE, totalItems); i++) {
     if (i == bookCount) {
-      drawRow(MARGIN_X, y, "Back", i == libIndex);
+      drawRow(MARGIN_X, y, "...Return to Menu", i == libIndex);
     } else {
       char pg[8]; sprintf(pg, "[%d]", books[i].lastPage + 1);
       int maxT = CHARS_PER_LINE - 2 - (int)strlen(pg) - 1;
@@ -813,7 +813,7 @@ void drawPage(int page, bool full) {
   }
 
   // ── Body text with serif font at textSize 1 ──
-  display.setFont(&FreeSerif9pt7b);
+  display.setFont(&FreeMono9pt7b);     // was &FreeSerif9pt7b
   display.setTextSize(1);
   String rawText = getPageText(currentBook, page);
   String lines[READ_LINES_PER_PAGE];
@@ -868,7 +868,7 @@ void drawChapterSelect(bool full) {
   int y = MARGIN_Y + CHAR_H + 6;
   for (int i = windowStart; i < min(windowStart + CH_VISIBLE, totalItems); i++) {
     if (i == chapterCount) {
-      drawRow(MARGIN_X, y, "Back", i == chapterIndex);
+      drawRow(MARGIN_X, y, "...Return to Book", i == chapterIndex);
     } else {
       char pgBuf[8]; sprintf(pgBuf, " p.%d", chapters[i].page + 1);
       int maxName = CHARS_PER_LINE - 2 - (int)strlen(pgBuf);
@@ -899,7 +899,7 @@ void drawBookmarks(bool full) {
     display.setCursor(MARGIN_X, MARGIN_Y + CHAR_H + 6 + CHAR_H + 2);
     display.print("Open Quick Menu while reading.");
     int y = MARGIN_Y + CHAR_H + 6 + (CHAR_H + 2) * 3;
-    drawRow(MARGIN_X, y, "Back", bmIndex == 0);
+    drawRow(MARGIN_X, y, "...Return to Menu", bmIndex == 0);
     doUpdate(full); return;
   }
 
@@ -908,7 +908,7 @@ void drawBookmarks(bool full) {
   int y = MARGIN_Y + CHAR_H + 6;
   for (int i = windowStart; i < min(windowStart + BM_VISIBLE, totalItems); i++) {
     if (i == bookmarkCount) {
-      drawRow(MARGIN_X, y, "Back", i == bmIndex);
+      drawRow(MARGIN_X, y, "...Return to Menu", i == bmIndex);
     } else {
       int bi = bookmarks[i].bookIdx;
       int pg = bookmarks[i].page;
@@ -969,37 +969,17 @@ void drawSettingsDeleteBook(bool full) {
 
 // ─── INFO ────────────────────────────────────────────────────────────────────
 static const char* INFO_LINES[] = {
-  "MENUS",
-  "  1 click  = next item (down)",
-  "  2 clicks = previous item (up)",
-  "  hold     = select / confirm",
-  "  3s hold  = power off",
-  "",
-  "READING",
-  "  1 click  = next page",
-  "  2 clicks = previous page",
-  "  hold     = open quick menu",
-  "  3s hold  = back to main menu",
-  "",
-  "QUICK MENU",
-  "  1 click  = next option",
-  "  2 clicks = previous option",
-  "  hold     = confirm option",
-  "  Options:",
-  "    Chapter Select",
-  "    Bookmark this page",
-  "    Start from beginning",
-  "    Return to Main Menu",
-  "    Back to book",
-  "",
-  "SETTINGS",
-  "  Bluetooth toggle is here",
-  "  Delete books, reset progress",
-  "",
-  "INFO (this screen)",
-  "  1 click  = scroll down",
-  "  2 clicks = scroll up",
-  "  hold     = back to main menu"
+  "NAVIGATION"
+  "1 Button Press = Page Forward / Down"
+  "2 Button Presses = Page Back / Up"
+  "Long Press = Select"
+  "Extra Long Press (3 seconds) = Back to menu OR Power Off"
+  "                       "
+  "ADDING BOOKS"
+  "Books can be added and removed via Bluetooth at:"
+  "|https://samuelsowanick.github.io/mini-ink-book-connect/|"
+  "                       "
+  "Bluetooth must be enabled under 'Settings > Bluetooth'"
 };
 static const int INFO_LINE_COUNT_CHECK = 30; // matches #define INFO_LINE_COUNT above
 
@@ -1230,18 +1210,98 @@ void stopBLE() {
 //  SLEEP QUOTE  (full refresh before deep sleep)
 // ============================================================
 void drawSleepQuote() {
-  static const char* quotes[] = {
-    "A reader lives a thousand lives before he dies. — George R.R. Martin",
-    "Not all those who wander are lost. — J.R.R. Tolkien",
-    "It is what you read when you don't have to that determines what you will be. — Oscar Wilde",
-    "Libraries are the wardrobes of literature, whence men may bring forth something for ornament, much for curiosity, and more for use. — Dion Boucicault",
-    "I have always imagined that Paradise will be a kind of library. — Jorge Luis Borges",
-    "A library is not a luxury but one of the necessities of life. — Henry Ward Beecher",
-    "Think before you speak. Read before you think. — Fran Lebowitz",
-    "Until I feared I would lose it, I never loved to read. One does not love breathing. — Harper Lee",
-    "The only thing you absolutely have to know is the location of the library. — Albert Einstein",
-    "Today a reader, tomorrow a leader. — Margaret Fuller"
-  };
+static const char* quotes[] = {
+  "A reader lives a thousand lives before he dies. -- George R.R. Martin",
+  "Not all readers are leaders, but all leaders are readers. -- Harry S. Truman",
+  "Reading is to the mind what exercise is to the body. -- Joseph Addison",
+  "The more that you read, the more things you will know. -- Dr. Seuss",
+  "I do believe something very magical can happen when you read a good book. -- J.K. Rowling",
+  "Reading is a discount ticket to everywhere. -- Mary Schmich",
+  "Reading gives us someplace to go when we have to stay where we are. -- Mason Cooley",
+  "Once you learn to read, you will be forever free. -- Frederick Douglass",
+  "There is no friend as loyal as a book. -- Ernest Hemingway",
+  "A book is a dream that you hold in your hands. -- Neil Gaiman",
+  "Books are the mirrors of the soul. -- Virginia Woolf",
+  "A good book has no ending. -- R.D. Cumming",
+  "Books are a uniquely portable magic. -- Stephen King",
+  "A book is a gift you can open again and again. -- Garrison Keillor",
+  "Books are the quietest and most constant of friends. -- Charles W. Eliot",
+  "A room without books is like a body without a soul. -- Marcus Tullius Cicero",
+  "Books are lighthouses erected in the great sea of time. -- E.P. Whipple",
+  "The books that the world calls immoral are books that show the world its own shame. -- Oscar Wilde",
+  "A book must be the axe for the frozen sea within us. -- Franz Kafka",
+  "Good friends, good books, and a sleepy conscience: this is the ideal life. -- Mark Twain",
+  "Outside of a dog, a book is man's best friend. Inside of a dog, it's too dark to read. -- Groucho Marx",
+  "A book lying idle on a shelf is wasted ammunition. -- Henry Miller",
+  "A library is not a luxury but one of the necessities of life. -- Henry Ward Beecher",
+  "Google can bring you back 100,000 answers. A librarian can bring you back the right one. -- Neil Gaiman",
+  "Libraries are the thin red line between civilization and barbarism. -- Neil Gaiman",
+  "A library is the delivery room for the birth of ideas. -- Norman Cousins",
+  "The library is the temple of learning, and learning has liberated more people than all the wars in history. -- Carl T. Rowan",
+  "Libraries store the energy that fuels the imagination. -- Sidney Sheldon",
+  "A great library contains the diary of the human race. -- George Mercer Dawson",
+  "The only thing that you absolutely have to know is the location of the library. -- Albert Einstein",
+  "I have always imagined that Paradise will be a kind of library. -- Jorge Luis Borges",
+  "My alma mater was books, a good library. -- Malcolm X",
+  "Reading is the sole means by which we slip, involuntarily, often helplessly, into another's skin. -- Joyce Carol Oates",
+  "That's the thing about books. They let you travel without moving your feet. -- Jhumpa Lahiri",
+  "Books were my pass to personal freedom. -- Oprah Winfrey",
+  "Fiction reveals truth that reality obscures. -- Ralph Waldo Emerson",
+  "The book you don't read won't help. -- Jim Rohn",
+  "I am not a speed reader. I am a speed understander. -- Isaac Asimov",
+  "To read without reflecting is like eating without digesting. -- Edmund Burke",
+  "Reading makes a full man; conference a ready man; and writing an exact man. -- Francis Bacon",
+  "Show me a family of readers and I will show you the people who move the world. -- Napoleon Bonaparte",
+  "In books I have traveled, not only to other worlds, but into my own. -- Anna Quindlen",
+  "Books are the carriers of civilization. -- Barbara Tuchman",
+  "Read a thousand books, and your words will flow like a river. -- Lisa See",
+  "The reading of all good books is like conversation with the finest men of past centuries. -- Rene Descartes",
+  "If there's a book that you want to read, but it hasn't been written yet, then you must write it. -- Toni Morrison",
+  "There is no greater agony than bearing an untold story inside you. -- Maya Angelou",
+  "A writer only begins a book. A reader finishes it. -- Samuel Johnson",
+  "Every book you pick up has its own lesson or lessons. -- Stephen King",
+  "The purpose of a writer is to keep civilization from destroying itself. -- Albert Camus",
+  "Literature is a way of noticing the existence of other people. -- George Saunders",
+  "A writer is a reader moved to emulation. -- Saul Bellow",
+  "Literacy is a bridge from misery to hope. -- Kofi Annan",
+  "One child, one teacher, one book, one pen can change the world. -- Malala Yousafzai",
+  "The man who does not read good books has no advantage over the man who cannot read them. -- Mark Twain",
+  "Literacy is not a luxury; it is a right and a responsibility. -- Hillary Clinton",
+  "The more I read, the more I acquire, the more certain I am that I know nothing. -- Voltaire",
+  "Children are made readers on the laps of their parents. -- Emilie Buchwald",
+  "Librarians save lives: by handing the right book, at the right time, to a kid in need. -- Neil Gaiman",
+  "To read is to voyage through time. -- Carl Sagan",
+  "Until I feared I would lose it, I never loved to read. One does not love breathing. -- Harper Lee",
+  "I kept always two books in my pocket: one to read, one to write in. -- Robert Louis Stevenson",
+  "There is no such thing as a child who hates to read; there are only children who have not found the right book. -- Frank Serafini",
+  "Literature is the art of discovering something extraordinary about ordinary people. -- Boris Pasternak",
+  "Books are not made for furniture, but there is nothing else that so beautifully furnishes a house. -- Henry Ward Beecher",
+  "Without words, without writing, and without books there would be no history, there could be no concept of humanity. -- Hermann Hesse",
+  "Books are the plane, and the train, and the road. They are the destination, and the journey. -- Anna Quindlen",
+  "In the library, I felt better, words you could trust and look at till you understood them. -- Jeanette Winterson",
+  "Literature is the most agreeable way of ignoring life. -- Fernando Pessoa",
+  "Stories are a communal currency of humanity. -- Tahir Shah",
+  "That is part of the beauty of all literature. You discover that your longings are universal longings. -- F. Scott Fitzgerald",
+  "We are all stories in the end. -- Steven Moffat",
+  "A story has no beginning or end; arbitrarily one chooses that moment of experience from which to look back. -- Graham Greene",
+  "All great literature is one of two stories: a man goes on a journey, or a stranger comes to town. -- Leo Tolstoy",
+  "Literature is not only a mirror; it is also a map. -- Margaret Atwood",
+  "Books let us into their souls and lay open to us the secrets of our own. -- William Hazlitt",
+  "To add a library to a house is to give that house a soul. -- Cicero",
+  "What a school thinks about its library is a measure of what it feels about education. -- Harold Howe",
+  "Libraries allow children to ask questions about the world and find the answers. -- Julius Lester",
+  "A book is a loaded gun in the house next door. -- Ray Bradbury",
+  "Education is the most powerful weapon which you can use to change the world. -- Nelson Mandela",
+  "The more you read, the more you know. The more you know, the smarter you grow. -- Robert Kiyosaki",
+  "Books are the bees which carry the quickening pollen from one to another mind. -- James Russell Lowell",
+  "Reading is an act of civilization; it is one of the greatest acts of civilization. -- Milton Glaser",
+  "Think before you speak. Read before you think. -- Fran Lebowitz",
+  "Today a reader, tomorrow a leader. -- Margaret Fuller",
+  "I've been drunk for about a week now, and I thought it might sober me up to sit in a library. -- F. Scott Fitzgerald",
+  "Libraries are the wardrobes of literature, whence men may bring forth something for ornament, much for curiosity, and more for use. -- Dion Boucicault",
+  "Reading is the key that opens doors to many good things in life. -- Rupert Evans"
+};
+  
   const int quoteCount = 10;
   int idx = (esp_random() % quoteCount);
 
