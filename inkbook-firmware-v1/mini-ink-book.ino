@@ -47,6 +47,15 @@
 // ─── Display ────────────────────────────────────────────────────────────────
 EInkDisplay_VisionMasterE290 display;
 
+// ─── Battery voltage monitoring ──────────────────────────────────────────────
+// Heltec VisionMaster E290 routes VBAT through a 1:2 resistor divider to GPIO1.
+// Adjust BATT_ADC_PIN if your specific board revision differs.
+#define BATT_ADC_PIN    1       // GPIO1 = ADC1_CH0 on ESP32-S3
+#define BATT_V_FULL     4200    // mV — fully charged LiPo
+#define BATT_V_EMPTY    3000    // mV — cutoff voltage
+#define BATT_ADC_VREF   3300    // mV — ADC reference (3.3 V rail)
+#define BATT_DIVIDER    2       // on-board voltage divider ratio
+
 // ─── Layout (landscape 296 × 128) ───────────────────────────────────────────
 #define SCREEN_W        128
 #define SCREEN_H        296
@@ -190,8 +199,7 @@ int           btnLastState   = HIGH;
 unsigned long btnPressTime   = 0;
 unsigned long btnReleaseTime = 0;
 int           pendingClicks  = 0;
-bool          longFired      = false;
-bool          xlongFired     = false;
+// All events now fire on button RELEASE so two long-press durations work correctly
 
 // ============================================================
 //  FORWARD DECLARATIONS
@@ -200,6 +208,7 @@ void doUpdate(bool forceFull = false);
 
 void drawSleepQuote();
 void handleChapterSelectInput(BtnEvent e);
+void drawBatteryPercent();
 
 void drawCenteredTitle(const char* title);
 void drawMenu(bool full = false);
@@ -367,20 +376,41 @@ void loop() {
 }
 
 // ============================================================
-//  BUTTON LOGIC
+//  BUTTON LOGIC  -- all events fire on button RELEASE
+//  Hold duration is measured at the moment of release so
+//  BTN_LONG and BTN_XLONG are clearly distinguished.
 // ============================================================
 BtnEvent readButton() {
   int reading = digitalRead(BTN_PIN);
   BtnEvent result = BTN_NONE;
   unsigned long now = millis();
-  if (reading == LOW  && btnLastState == HIGH)              { btnPressTime = now; longFired = false; xlongFired = false; }
-  if (reading == LOW  && !xlongFired && now - btnPressTime >= XLONG_PRESS_MS) { xlongFired = true; longFired = true; result = BTN_XLONG; }
-  else if (reading == LOW && !longFired && now - btnPressTime >= LONG_PRESS_MS) { longFired = true; result = BTN_LONG; }
-  if (reading == HIGH && btnLastState == LOW && !longFired) { pendingClicks++; btnReleaseTime = now; }
+
+  // Falling edge: record press start
+  if (reading == LOW && btnLastState == HIGH) {
+    btnPressTime = now;
+  }
+
+  // Rising edge: decide event based on how long it was held
+  if (reading == HIGH && btnLastState == LOW) {
+    unsigned long held = now - btnPressTime;
+    if (held >= XLONG_PRESS_MS) {
+      result = BTN_XLONG;
+      pendingClicks = 0;
+    } else if (held >= LONG_PRESS_MS) {
+      result = BTN_LONG;
+      pendingClicks = 0;
+    } else {
+      pendingClicks++;
+      btnReleaseTime = now;
+    }
+  }
+
+  // After double-click window expires, emit single or double
   if (pendingClicks > 0 && reading == HIGH && now - btnReleaseTime > DOUBLE_MS) {
     result = (pendingClicks >= 2) ? BTN_DOUBLE : BTN_SINGLE;
     pendingClicks = 0;
   }
+
   btnLastState = reading;
   return result;
 }
@@ -418,10 +448,13 @@ void handleMenuInput(BtnEvent e) {
 }
 
 void handleLibraryInput(BtnEvent e) {
-  if (bookCount == 0) { appState = STATE_MENU; drawMenu(true); return; }
-  if (e == BTN_SINGLE) { libIndex = (libIndex + 1) % bookCount; drawLibrary(); }
-  else if (e == BTN_DOUBLE) { libIndex = (libIndex - 1 + bookCount) % bookCount; drawLibrary(); }
+  if (e == BTN_SINGLE) { libIndex = (libIndex + 1) % (bookCount + 1); drawLibrary(); }
+  else if (e == BTN_DOUBLE) { libIndex = (libIndex - 1 + bookCount + 1) % (bookCount + 1); drawLibrary(); }
   else if (e == BTN_LONG) {
+    if (bookCount == 0 || libIndex == bookCount) {
+      // "Back" row selected, or no books
+      appState = STATE_MENU; drawMenu(true); return;
+    }
     currentBook = libIndex;
     currentPage = books[currentBook].lastPage;
     buildPageIndex(currentBook);
@@ -494,9 +527,17 @@ void handleOverlayInput(BtnEvent e) {
 }
 
 void handleChapterSelectInput(BtnEvent e) {
-  if (e == BTN_SINGLE) { chapterIndex = (chapterIndex + 1) % chapterCount; drawChapterSelect(false); }
-  else if (e == BTN_DOUBLE) { chapterIndex = (chapterIndex - 1 + chapterCount) % chapterCount; drawChapterSelect(false); }
+  int totalItems = chapterCount + 1; // +1 for Back
+  if (e == BTN_SINGLE) { chapterIndex = (chapterIndex + 1) % totalItems; drawChapterSelect(false); }
+  else if (e == BTN_DOUBLE) { chapterIndex = (chapterIndex - 1 + totalItems) % totalItems; drawChapterSelect(false); }
   else if (e == BTN_LONG) {
+    if (chapterIndex == chapterCount) {
+      // Back to overlay
+      overlayIndex = 0;
+      appState = STATE_OVERLAY;
+      drawOverlay(true);
+      return;
+    }
     currentPage = chapters[chapterIndex].page;
     books[currentBook].lastPage = currentPage;
     saveMeta();
@@ -506,10 +547,14 @@ void handleChapterSelectInput(BtnEvent e) {
 }
 
 void handleBookmarksInput(BtnEvent e) {
-  if (bookmarkCount == 0) { appState = STATE_MENU; drawMenu(true); return; }
-  if (e == BTN_SINGLE) { bmIndex = (bmIndex + 1) % bookmarkCount; drawBookmarks(); }
-  else if (e == BTN_DOUBLE) { bmIndex = (bmIndex - 1 + bookmarkCount) % bookmarkCount; drawBookmarks(); }
+  int totalItems = bookmarkCount + 1; // +1 for Back
+  if (e == BTN_SINGLE) { bmIndex = (bmIndex + 1) % totalItems; drawBookmarks(); }
+  else if (e == BTN_DOUBLE) { bmIndex = (bmIndex - 1 + totalItems) % totalItems; drawBookmarks(); }
   else if (e == BTN_LONG) {
+    if (bmIndex == bookmarkCount) {
+      // "Back" row
+      appState = STATE_MENU; drawMenu(true); return;
+    }
     int bi = bookmarks[bmIndex].bookIdx;
     int pg = bookmarks[bmIndex].page;
     if (bi >= 0 && bi < bookCount) {
@@ -577,13 +622,17 @@ void handleSettingsDeleteBookInput(BtnEvent e) {
 // ─── Info line count (used in handleInfoInput and drawInfo) ─────────────────
 #define INFO_LINE_COUNT 30
 
+#define INFO_SCROLL_STEP 3
+
 void handleInfoInput(BtnEvent e) {
   int visibleLines = (SCREEN_W - MARGIN_Y*2 - CHAR_H - 8) / (CHAR_H + 1);
   int maxScroll = max(0, INFO_LINE_COUNT - visibleLines);
   if (e == BTN_SINGLE) {
-    if (infoScrollOffset < maxScroll) { infoScrollOffset++; drawInfo(); }
+    infoScrollOffset = min(infoScrollOffset + INFO_SCROLL_STEP, maxScroll);
+    drawInfo();
   } else if (e == BTN_DOUBLE) {
-    if (infoScrollOffset > 0) { infoScrollOffset--; drawInfo(); }
+    infoScrollOffset = max(infoScrollOffset - INFO_SCROLL_STEP, 0);
+    drawInfo();
   } else if (e == BTN_LONG || e == BTN_XLONG) {
     infoScrollOffset = 0;
     appState = STATE_MENU;
@@ -658,6 +707,31 @@ void resetAllProgress() {
 }
 
 // ============================================================
+//  BATTERY
+// ============================================================
+int readBatteryPercent() {
+  long sum = 0;
+  for (int i = 0; i < 8; i++) { sum += analogRead(BATT_ADC_PIN); delay(1); }
+  int raw = (int)(sum / 8);
+  int mv  = (int)((long)raw * BATT_ADC_VREF * BATT_DIVIDER / 4095);
+  int pct = (int)((long)(mv - BATT_V_EMPTY) * 100 / (BATT_V_FULL - BATT_V_EMPTY));
+  if (pct > 100) pct = 100;
+  if (pct <   0) pct =   0;
+  return pct;
+}
+
+void drawBatteryPercent() {
+  int pct = readBatteryPercent();
+  char buf[6]; sprintf(buf, "%d%%", pct);
+  // Right-align in top-right corner
+  int x = SCREEN_H - (int)strlen(buf) * CHAR_W - MARGIN_X;
+  display.setFont(nullptr);
+  display.setTextSize(1);
+  display.setCursor(x, MARGIN_Y);
+  display.print(buf);
+}
+
+// ============================================================
 //  DISPLAY HELPERS  (menus always use textSize 1)
 // ============================================================
 void drawCenteredTitle(const char* title) {
@@ -685,8 +759,10 @@ void drawMenu(bool full) {
   display.setTextColor(BLACK);
 
   drawCenteredTitle("Mini InkBook");
+  drawBatteryPercent();
   if (bleEnabled) {
-    display.setCursor(SCREEN_H - CHAR_W * 5 - MARGIN_X, MARGIN_Y);
+    // shift BLE tag left to avoid overlap with battery %
+    display.setCursor(SCREEN_H - CHAR_W * 10 - MARGIN_X, MARGIN_Y);
     display.print("[BLE]");
   }
 
@@ -706,32 +782,41 @@ void drawMenu(bool full) {
 }
 
 // ─── LIBRARY ─────────────────────────────────────────────────────────────────
-#define LIB_VISIBLE 9
+#define LIB_VISIBLE 8
 void drawLibrary(bool full) {
   display.clearMemory();
   display.setTextSize(1);
   display.setTextColor(BLACK);
   drawCenteredTitle("Library");
+  drawBatteryPercent();
 
   if (bookCount == 0) {
     display.setCursor(MARGIN_X, MARGIN_Y + CHAR_H + 6);
     display.print("No books yet.");
     display.setCursor(MARGIN_X, MARGIN_Y + CHAR_H + 6 + CHAR_H + 2);
     display.print("Enable BLE to send .txt files.");
+    // Back row
+    int y = MARGIN_Y + CHAR_H + 6 + (CHAR_H + 2) * 3;
+    drawRow(MARGIN_X, y, "Back", libIndex == 0);
     doUpdate(full); return;
   }
 
+  int totalItems = bookCount + 1; // +1 for Back
   int windowStart = (libIndex / LIB_VISIBLE) * LIB_VISIBLE;
   int y = MARGIN_Y + CHAR_H + 6;
-  for (int i = windowStart; i < min(windowStart + LIB_VISIBLE, bookCount); i++) {
-    char pg[8]; sprintf(pg, "[%d]", books[i].lastPage + 1);
-    int maxT = CHARS_PER_LINE - 2 - (int)strlen(pg) - 1;
-    String label = books[i].title.substring(0, maxT) + " " + pg;
-    drawRow(MARGIN_X, y, label, i == libIndex);
+  for (int i = windowStart; i < min(windowStart + LIB_VISIBLE, totalItems); i++) {
+    if (i == bookCount) {
+      drawRow(MARGIN_X, y, "Back", i == libIndex);
+    } else {
+      char pg[8]; sprintf(pg, "[%d]", books[i].lastPage + 1);
+      int maxT = CHARS_PER_LINE - 2 - (int)strlen(pg) - 1;
+      String label = books[i].title.substring(0, maxT) + " " + pg;
+      drawRow(MARGIN_X, y, label, i == libIndex);
+    }
     y += CHAR_H + 2;
   }
-  if (bookCount > LIB_VISIBLE) {
-    char pos[10]; sprintf(pos, "%d/%d", libIndex + 1, bookCount);
+  if (totalItems > LIB_VISIBLE) {
+    char pos[10]; sprintf(pos, "%d/%d", libIndex + 1, totalItems);
     display.setCursor(SCREEN_H - strlen(pos) * CHAR_W - MARGIN_X, MARGIN_Y);
     display.print(pos);
   }
@@ -807,24 +892,29 @@ void drawOverlay(bool full) {
 }
 
 // ─── CHAPTER SELECT ──────────────────────────────────────────────────────────
-#define CH_VISIBLE 9
+#define CH_VISIBLE 8
 void drawChapterSelect(bool full) {
   display.clearMemory();
   display.setTextSize(1);
   display.setTextColor(BLACK);
   drawCenteredTitle("Chapters");
 
+  int totalItems = chapterCount + 1; // +1 for Back
   int windowStart = (chapterIndex / CH_VISIBLE) * CH_VISIBLE;
   int y = MARGIN_Y + CHAR_H + 6;
-  for (int i = windowStart; i < min(windowStart + CH_VISIBLE, chapterCount); i++) {
-    char pgBuf[8]; sprintf(pgBuf, " p.%d", chapters[i].page + 1);
-    int maxName = CHARS_PER_LINE - 2 - (int)strlen(pgBuf);
-    String label = chapters[i].name.substring(0, maxName) + pgBuf;
-    drawRow(MARGIN_X, y, label, i == chapterIndex);
+  for (int i = windowStart; i < min(windowStart + CH_VISIBLE, totalItems); i++) {
+    if (i == chapterCount) {
+      drawRow(MARGIN_X, y, "Back", i == chapterIndex);
+    } else {
+      char pgBuf[8]; sprintf(pgBuf, " p.%d", chapters[i].page + 1);
+      int maxName = CHARS_PER_LINE - 2 - (int)strlen(pgBuf);
+      String label = chapters[i].name.substring(0, maxName) + pgBuf;
+      drawRow(MARGIN_X, y, label, i == chapterIndex);
+    }
     y += CHAR_H + 2;
   }
-  if (chapterCount > CH_VISIBLE) {
-    char pos[10]; sprintf(pos, "%d/%d", chapterIndex + 1, chapterCount);
+  if (totalItems > CH_VISIBLE) {
+    char pos[10]; sprintf(pos, "%d/%d", chapterIndex + 1, totalItems);
     display.setCursor(SCREEN_H - strlen(pos) * CHAR_W - MARGIN_X, MARGIN_Y);
     display.print(pos);
   }
@@ -832,33 +922,41 @@ void drawChapterSelect(bool full) {
 }
 
 // ─── BOOKMARKS ───────────────────────────────────────────────────────────────
-#define BM_VISIBLE 9
+#define BM_VISIBLE 8
 void drawBookmarks(bool full) {
   display.clearMemory();
   display.setTextSize(1);
   display.setTextColor(BLACK);
   drawCenteredTitle("Bookmarks");
+  drawBatteryPercent();
 
   if (bookmarkCount == 0) {
     display.setCursor(MARGIN_X, MARGIN_Y + CHAR_H + 6);
     display.print("No bookmarks yet.");
     display.setCursor(MARGIN_X, MARGIN_Y + CHAR_H + 6 + CHAR_H + 2);
     display.print("Open Quick Menu while reading.");
+    int y = MARGIN_Y + CHAR_H + 6 + (CHAR_H + 2) * 3;
+    drawRow(MARGIN_X, y, "Back", bmIndex == 0);
     doUpdate(full); return;
   }
 
+  int totalItems = bookmarkCount + 1; // +1 for Back
   int windowStart = (bmIndex / BM_VISIBLE) * BM_VISIBLE;
   int y = MARGIN_Y + CHAR_H + 6;
-  for (int i = windowStart; i < min(windowStart + BM_VISIBLE, bookmarkCount); i++) {
-    int bi = bookmarks[i].bookIdx;
-    int pg = bookmarks[i].page;
-    String title = (bi >= 0 && bi < bookCount) ? books[bi].title.substring(0, 22) : "?";
-    char label[48]; sprintf(label, "%s p.%d", title.c_str(), pg + 1);
-    drawRow(MARGIN_X, y, String(label), i == bmIndex);
+  for (int i = windowStart; i < min(windowStart + BM_VISIBLE, totalItems); i++) {
+    if (i == bookmarkCount) {
+      drawRow(MARGIN_X, y, "Back", i == bmIndex);
+    } else {
+      int bi = bookmarks[i].bookIdx;
+      int pg = bookmarks[i].page;
+      String title = (bi >= 0 && bi < bookCount) ? books[bi].title.substring(0, 22) : "?";
+      char label[48]; sprintf(label, "%s p.%d", title.c_str(), pg + 1);
+      drawRow(MARGIN_X, y, String(label), i == bmIndex);
+    }
     y += CHAR_H + 2;
   }
-  if (bookmarkCount > BM_VISIBLE) {
-    char pos[10]; sprintf(pos, "%d/%d", bmIndex + 1, bookmarkCount);
+  if (totalItems > BM_VISIBLE) {
+    char pos[10]; sprintf(pos, "%d/%d", bmIndex + 1, totalItems);
     display.setCursor(SCREEN_H - strlen(pos) * CHAR_W - MARGIN_X, MARGIN_Y);
     display.print(pos);
   }
@@ -871,6 +969,7 @@ void drawSettings(bool full) {
   display.setTextSize(1);
   display.setTextColor(BLACK);
   drawCenteredTitle("Settings");
+  drawBatteryPercent();
 
   int y = MARGIN_Y + CHAR_H + 6;
   for (int i = 0; i < SETTINGS_COUNT; i++) {
@@ -948,6 +1047,7 @@ void drawInfo() {
   display.setTextSize(1);
   display.setTextColor(BLACK);
   drawCenteredTitle("Button Guide");
+  drawBatteryPercent();
 
   int visibleLines = (SCREEN_W - MARGIN_Y*2 - CHAR_H - 8) / (CHAR_H + 1);
   int y = MARGIN_Y + CHAR_H + 6;
@@ -1171,16 +1271,16 @@ void stopBLE() {
 // ============================================================
 void drawSleepQuote() {
   static const char* quotes[] = {
-    "\"A reader lives a thousand lives before he dies.\" — George R.R. Martin",
-    "\"Not all those who wander are lost.\" — J.R.R. Tolkien",
-    "\"It is what you read when you don't have to that determines what you will be.\" — Oscar Wilde",
-    "\"Libraries are the wardrobes of literature, whence men, properly informed, may bring forth something for ornament, much for curiosity, and more for use.\" — Dion Boucicault",
-    "\"I have always imagined that Paradise will be a kind of library.\" — Jorge Luis Borges",
-    "\"A library is not a luxury but one of the necessities of life.\" — Henry Ward Beecher",
-    "\"Think before you speak. Read before you think.\" — Fran Lebowitz",
-    "\"Until I feared I would lose it, I never loved to read. One does not love breathing.\" — Harper Lee",
-    "\"The only thing you absolutely have to know is the location of the library.\" — Albert Einstein",
-    "\"Today a reader, tomorrow a leader.\" — Margaret Fuller"
+    "A reader lives a thousand lives before he dies. — George R.R. Martin",
+    "Not all those who wander are lost. — J.R.R. Tolkien",
+    "It is what you read when you don't have to that determines what you will be. — Oscar Wilde",
+    "Libraries are the wardrobes of literature, whence men may bring forth something for ornament, much for curiosity, and more for use. — Dion Boucicault",
+    "I have always imagined that Paradise will be a kind of library. — Jorge Luis Borges",
+    "A library is not a luxury but one of the necessities of life. — Henry Ward Beecher",
+    "Think before you speak. Read before you think. — Fran Lebowitz",
+    "Until I feared I would lose it, I never loved to read. One does not love breathing. — Harper Lee",
+    "The only thing you absolutely have to know is the location of the library. — Albert Einstein",
+    "Today a reader, tomorrow a leader. — Margaret Fuller"
   };
   const int quoteCount = 10;
   int idx = (esp_random() % quoteCount);
@@ -1190,14 +1290,25 @@ void drawSleepQuote() {
   display.setFont(nullptr);
   display.setTextSize(1);
   display.setTextColor(BLACK);
-  drawCenteredTitle("Good Night");
 
-  // Word-wrap the quote into lines
-  String lines[12];
-  int lc = wrapText(String(quotes[idx]), lines, 12, CHARS_PER_LINE);
-  int y = MARGIN_Y + CHAR_H + 8;
+  // Build quoted string
+  String quoted = String("\"") + quotes[idx] + "\"";
+
+  // Word-wrap the quote
+  String lines[14];
+  int lc = wrapText(quoted, lines, 14, CHARS_PER_LINE);
+
+  // Center the block vertically
+  int blockH = lc * (CHAR_H + 2);
+  int y = (SCREEN_W - blockH) / 2;
+  if (y < MARGIN_Y) y = MARGIN_Y;
+
   for (int i = 0; i < lc; i++) {
-    display.setCursor(MARGIN_X, y);
+    // Center each line horizontally
+    int lineLen = lines[i].length();
+    int x = (SCREEN_H - lineLen * CHAR_W) / 2;
+    if (x < MARGIN_X) x = MARGIN_X;
+    display.setCursor(x, y);
     display.print(lines[i]);
     y += CHAR_H + 2;
   }
