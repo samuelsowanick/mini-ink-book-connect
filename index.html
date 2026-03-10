@@ -618,7 +618,7 @@ async function ensureConnected() {
     try {
         setStatus('Searching for device...', 'busy');
         bleDevice = await navigator.bluetooth.requestDevice({
-            filters: [{ name: 'S3-Reader-BLE' }],
+            filters: [{ name: 'MiniInkBook' }],
             optionalServices: [SERVICE_UUID]
         });
         bleDevice.addEventListener('gattserverdisconnected', () => {
@@ -745,3 +745,4 @@ document.getElementById('refreshBtn').onclick = fetchFiles;
 </script>
 </body>
 </html>
+
