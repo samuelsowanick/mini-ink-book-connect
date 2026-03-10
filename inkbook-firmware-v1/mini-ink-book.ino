@@ -715,7 +715,7 @@ void drawCenteredTitle(const char* title) {
 void drawRow(int x, int y, const String& label, bool selected) {
   display.setTextSize(1);
   display.setCursor(x, y);
-  display.print(selected ? "> " : "  ");
+  display.print(selected ? "* " : "  ");
   display.print(label);
 }
 
