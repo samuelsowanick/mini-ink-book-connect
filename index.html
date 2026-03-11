@@ -1,917 +1,1367 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='22' width='24' height='5' rx='1.5' fill='%2300b284'/%3E%3Crect x='6' y='15' width='20' height='5' rx='1.5' fill='%23008f69'/%3E%3Crect x='9' y='8' width='14' height='5' rx='1.5' fill='%2300b284'/%3E%3Crect x='4' y='22' width='24' height='5' rx='1.5' fill='none' stroke='%23ffffff22' stroke-width='0.5'/%3E%3Crect x='6' y='15' width='20' height='5' rx='1.5' fill='none' stroke='%23ffffff22' stroke-width='0.5'/%3E%3Crect x='9' y='8' width='14' height='5' rx='1.5' fill='none' stroke='%23ffffff22' stroke-width='0.5'/%3E%3C/svg%3E">
-    <title>Mini InkBook Manager</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Source+Sans+3:wght@300;400;600&display=swap" rel="stylesheet">
-    <style>
-        :root {
-            --ink:        #1c1c1c;
-            --ink-mid:    #4a4a4a;
-            --ink-light:  #767676;
-            --border:     #d8d8d8;
-            --bg:         #f5f4f0;
-            --surface:    #ffffff;
-            --accent:     #00b284;
-            --accent-dk:  #008f69;
-            --warn:       #e05c00;
-            --danger:     #c0392b;
-            --disabled:   #b8b8b8;
-            --radius:     4px;
-            --font-head:  'Montserrat', sans-serif;
-            --font-body:  'Source Sans 3', sans-serif;
-        }
-
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-        body {
-            font-family: var(--font-body);
-            font-size: 15px;
-            background: var(--bg);
-            color: var(--ink);
-            min-height: 100vh;
-        }
-
-        .topbar {
-            background: var(--ink);
-            padding: 0 24px;
-            height: 52px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-        .topbar-brand {
-            font-family: var(--font-head);
-            font-size: 15px;
-            font-weight: 700;
-            letter-spacing: 0.04em;
-            color: #ffffff;
-            text-transform: uppercase;
-        }
-        .topbar-brand span { color: var(--accent); }
-
-        .conn-pill {
-            font-family: var(--font-head);
-            font-size: 10px;
-            font-weight: 600;
-            letter-spacing: 0.08em;
-            text-transform: uppercase;
-            padding: 4px 10px;
-            border-radius: 20px;
-            border: 1.5px solid;
-            transition: all 0.2s;
-        }
-        .conn-pill.disconnected { color: #888; border-color: #555; }
-        .conn-pill.connected    { color: var(--accent); border-color: var(--accent); }
-
-        .page {
-            max-width: 560px;
-            margin: 0 auto;
-            padding: 32px 20px 60px;
-        }
-        .page-title {
-            font-family: var(--font-head);
-            font-size: 22px;
-            font-weight: 700;
-            letter-spacing: -0.01em;
-            color: var(--ink);
-            margin-bottom: 4px;
-        }
-        .page-sub {
-            font-size: 13px;
-            color: var(--ink-light);
-            font-weight: 300;
-            margin-bottom: 28px;
-        }
-
-        .section {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            margin-bottom: 16px;
-            overflow: hidden;
-        }
-        .section-header {
-            padding: 14px 20px 12px;
-            border-bottom: 1px solid var(--border);
-        }
-        .section-label {
-            font-family: var(--font-head);
-            font-size: 10px;
-            font-weight: 700;
-            letter-spacing: 0.1em;
-            text-transform: uppercase;
-            color: var(--ink-light);
-        }
-        .section-body { padding: 20px; }
-
-        .status-row {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            margin-bottom: 16px;
-        }
-        .status-dot {
-            width: 8px; height: 8px;
-            border-radius: 50%;
-            background: var(--disabled);
-            flex-shrink: 0;
-            transition: background 0.3s;
-        }
-        .status-dot.ok    { background: var(--accent); }
-        .status-dot.error { background: var(--danger); }
-        .status-dot.busy  { background: var(--warn); animation: pulse 1s infinite; }
-        @keyframes pulse {
-            0%, 100% { opacity: 1; } 50% { opacity: 0.3; }
-        }
-        .status-text { font-size: 13px; color: var(--ink-mid); }
-
-        .btn {
-            font-family: var(--font-head);
-            font-size: 12px;
-            font-weight: 700;
-            letter-spacing: 0.06em;
-            text-transform: uppercase;
-            padding: 11px 20px;
-            border-radius: var(--radius);
-            border: none;
-            cursor: pointer;
-            transition: background 0.15s, opacity 0.15s, transform 0.1s;
-            display: inline-block;
-            line-height: 1;
-        }
-        .btn:active:not(:disabled) { transform: scale(0.98); }
-        .btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
-        .btn-primary { background: var(--accent); color: #fff; width: 100%; padding: 13px 20px; }
-        .btn-primary:hover:not(:disabled) { background: var(--accent-dk); }
-
-        .btn-disconnect { background: #2a1414; color: #ff8a80; width: 100%; padding: 13px 20px; }
-        .btn-disconnect:hover:not(:disabled) { background: #3d1a1a; }
-
-        .btn-outline {
-            background: transparent;
-            color: var(--ink);
-            border: 1.5px solid var(--border);
-            width: 100%;
-            padding: 11px 20px;
-        }
-        .btn-outline:hover:not(:disabled) { border-color: var(--ink); background: rgba(0,0,0,0.03); }
-
-        .btn-ghost {
-            background: transparent;
-            color: var(--ink-light);
-            border: 1.5px solid var(--border);
-            font-size: 11px;
-            padding: 7px 12px;
-        }
-        .btn-ghost:hover:not(:disabled) { border-color: var(--ink-mid); color: var(--ink); }
-
-        .btn-row { display: flex; gap: 10px; }
-        .btn-row .btn { flex: 1; }
-
-        .file-info-box {
-            background: var(--bg);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            padding: 12px 14px;
-            margin: 12px 0 0;
-            min-height: 46px;
-        }
-        .file-info-box .file-title {
-            font-family: var(--font-head);
-            font-size: 13px;
-            font-weight: 600;
-            color: var(--ink);
-            margin-bottom: 3px;
-        }
-        .file-info-box .file-meta { font-size: 11px; color: var(--ink-light); font-weight: 300; }
-        .file-info-box .file-placeholder { font-size: 12px; color: var(--ink-light); }
-
-        .progress-wrap { margin-top: 14px; display: none; }
-        .progress-label {
-            font-size: 11px;
-            color: var(--ink-light);
-            font-family: var(--font-head);
-            font-weight: 600;
-            letter-spacing: 0.05em;
-            text-transform: uppercase;
-            margin-bottom: 6px;
-            display: flex;
-            justify-content: space-between;
-        }
-        progress {
-            width: 100%; height: 4px;
-            border: none; border-radius: 2px;
-            background: var(--border);
-            appearance: none; -webkit-appearance: none;
-        }
-        progress::-webkit-progress-bar   { background: var(--border); border-radius: 2px; }
-        progress::-webkit-progress-value { background: var(--accent); border-radius: 2px; }
-        progress::-moz-progress-bar      { background: var(--accent); border-radius: 2px; }
-
-        .divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
-
-        .book-list { display: none; }
-        .book-list-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 14px;
-        }
-        .book-list-title {
-            font-family: var(--font-head);
-            font-size: 11px;
-            font-weight: 700;
-            letter-spacing: 0.08em;
-            text-transform: uppercase;
-            color: var(--ink-mid);
-        }
-        .book-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 12px 0;
-            border-bottom: 1px solid var(--border);
-        }
-        .book-item:last-child { border-bottom: none; }
-        .book-item-title { font-size: 14px; font-weight: 400; color: var(--ink); }
-        .btn-delete {
-            font-family: var(--font-head);
-            font-size: 10px;
-            font-weight: 700;
-            letter-spacing: 0.06em;
-            text-transform: uppercase;
-            background: transparent;
-            color: var(--danger);
-            border: 1.5px solid var(--danger);
-            padding: 5px 10px;
-            border-radius: var(--radius);
-            cursor: pointer;
-            transition: background 0.15s, color 0.15s;
-            flex-shrink: 0;
-        }
-        .btn-delete:hover { background: var(--danger); color: #fff; }
-        .empty-msg {
-            font-size: 13px;
-            color: var(--ink-light);
-            text-align: center;
-            padding: 20px 0;
-            font-weight: 300;
-        }
-
-        details { margin-top: 16px; }
-        summary {
-            font-family: var(--font-head);
-            font-size: 10px;
-            font-weight: 700;
-            letter-spacing: 0.1em;
-            text-transform: uppercase;
-            color: var(--ink-light);
-            cursor: pointer;
-            user-select: none;
-            list-style: none;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        summary::-webkit-details-marker { display: none; }
-        summary::before {
-            content: '';
-            display: inline-block;
-            width: 6px; height: 6px;
-            border-right: 1.5px solid var(--ink-light);
-            border-bottom: 1.5px solid var(--ink-light);
-            transform: rotate(-45deg);
-            transition: transform 0.2s;
-            position: relative; top: -1px;
-        }
-        details[open] summary::before { transform: rotate(45deg); top: -3px; }
-        summary:hover { color: var(--ink); }
-        summary:hover::before { border-color: var(--ink); }
-
-        #log {
-            margin-top: 10px;
-            overflow-y: auto;
-            max-height: 160px;
-            background: #1a1a1a;
-            color: #aaa;
-            padding: 12px 14px;
-            border-radius: var(--radius);
-            font-family: 'Courier New', monospace;
-            font-size: 11px;
-            line-height: 1.7;
-        }
-        #log .ts   { color: #444; }
-        #log .ok   { color: #00b284; }
-        #log .err  { color: #ff6b6b; }
-        #log .warn { color: #ffaa55; }
-    </style>
-</head>
-<body>
-
-<div class="topbar">
-    <div class="topbar-brand">Mini <span>Ink</span>Book</div>
-    <div id="connPill" class="conn-pill disconnected">Not connected</div>
-</div>
-
-<div class="page">
-    <h1 class="page-title">Device Manager</h1>
-    <p class="page-sub">Transfer EPUB books to your e-ink reader via Bluetooth</p>
-
-    <div class="section">
-        <div class="section-header">
-            <div class="section-label">Bluetooth Connection</div>
-        </div>
-        <div class="section-body">
-            <div class="status-row">
-                <div id="statusDot" class="status-dot"></div>
-                <div id="statusText" class="status-text">Not connected</div>
-            </div>
-            <button id="bleConnectBtn" class="btn btn-primary">Connect to Device</button>
-        </div>
-    </div>
-
-    <div class="section">
-        <div class="section-header">
-            <div class="section-label">Send Book</div>
-        </div>
-        <div class="section-body">
-            <div class="btn-row">
-                <button id="selectBtn" class="btn btn-outline">Choose EPUB</button>
-                <button id="uploadBtn" class="btn btn-primary" disabled>Send to Device</button>
-            </div>
-            <input type="file" id="fileInput" accept=".epub" style="display:none">
-            <div class="file-info-box" id="fileInfoBox">
-                <span class="file-placeholder">No file selected</span>
-            </div>
-            <div class="progress-wrap" id="progressWrap">
-                <div class="progress-label">
-                    <span>Uploading</span>
-                    <span id="progressPct">0%</span>
-                </div>
-                <progress id="progressBar" value="0" max="100"></progress>
-            </div>
-        </div>
-    </div>
-
-    <div class="section">
-        <div class="section-header">
-            <div class="section-label">Device Library</div>
-        </div>
-        <div class="section-body">
-            <button id="manageBtn" class="btn btn-outline">Load Books from Device</button>
-            <div class="book-list" id="fileListSection">
-                <hr class="divider">
-                <div class="book-list-header">
-                    <span class="book-list-title">Books on device</span>
-                    <button id="refreshBtn" class="btn btn-ghost">Refresh</button>
-                </div>
-                <div id="fileContainer"></div>
-            </div>
-        </div>
-    </div>
-
-    <details>
-        <summary>Diagnostics log</summary>
-        <div id="log"></div>
-    </details>
-</div>
-
-<script>
-const SERVICE_UUID     = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
-const UPLOAD_CHAR_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
-const LIST_CHAR_UUID   = "beb5483e-36e1-4688-b7f5-ea07361b26a9";
-const DELETE_CHAR_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26aa";
-const CHUNK_SIZE       = 512;
-
-let cleanText = "";
-let fileName  = "";
-let bleDevice = null;
-let bleServer = null;
-
-const logEl      = document.getElementById('log');
-const statusDot  = document.getElementById('statusDot');
-const statusText = document.getElementById('statusText');
-const connPill   = document.getElementById('connPill');
-
-function log(msg, type = '') {
-    const ts  = new Date().toLocaleTimeString();
-    const cls = type ? ` class="${type}"` : '';
-    logEl.innerHTML += `<span class="ts">[${ts}]</span><span${cls}> ${msg}</span><br>`;
-    logEl.scrollTop  = logEl.scrollHeight;
-}
-
-function setStatus(msg, type = '') {
-    statusText.textContent = msg;
-    statusDot.className    = 'status-dot' + (type ? ` ${type}` : '');
-}
-
-function setConnected(connected) {
-    connPill.textContent = connected ? 'Connected' : 'Not connected';
-    connPill.className   = `conn-pill ${connected ? 'connected' : 'disconnected'}`;
-    const btn = document.getElementById('bleConnectBtn');
-    btn.textContent = connected ? 'Disconnect' : 'Connect to Device';
-    btn.className   = connected ? 'btn btn-disconnect' : 'btn btn-primary';
-}
-
-// ── Helpers ────────────────────────────────────────────────────────────────
-
-/**
- * Resolve a path that may contain ../ segments and normalise it.
- * e.g. resolvePath('OEBPS/content/', '../Images/cover.xhtml')
- *      => 'OEBPS/Images/cover.xhtml'
+/*
+ * Mini InkBook — E-Ink BLE Reader for VisionMaster e290 (Heltec)
+ * Board: ESP32-S3 / VisionMaster e290
+ *
+ * Button scheme:
+ *   Menus / Library / Bookmarks / Settings:
+ *     1 click  = next item (down)
+ *     2 clicks = previous item (up)
+ *     hold     = select / confirm
+ *     3s hold  = power off
+ *
+ *   Reading:
+ *     1 click  = next page
+ *     2 clicks = previous page
+ *     hold     = open in-book overlay menu
+ *     3s hold  = back to main menu
+ *
+ *   Overlay (while reading):
+ *     1 click  = next option (down)
+ *     2 clicks = previous option (up)
+ *     hold     = confirm / select
+ *     Options: Chapter Select | Bookmark | Start from beginning |
+ *              Return to Main Menu | Back to book
+ *
+ *   Chapter Select:
+ *     Chapters detected automatically from === Chapter Name === markers.
+ *     1 click = next chapter, 2 clicks = previous, hold = jump to chapter.
+ *
+ *   Info screen:
+ *     1 click  = scroll down
+ *     2 clicks = scroll up
+ *     hold     = back to main menu
  */
-function resolvePath(base, href) {
-    // If href is already absolute within the zip (no leading /) just combine
-    if (!href) return '';
-    // Remove any fragment
-    href = href.split('#')[0];
-    if (!href) return '';
 
-    // If href contains no path separators it's relative to base dir
-    const parts = (base + href).split('/');
-    const resolved = [];
-    for (const part of parts) {
-        if (part === '..') {
-            resolved.pop();
-        } else if (part !== '.') {
-            resolved.push(part);
-        }
-    }
-    return resolved.join('/');
+#include <Arduino.h>
+#include <Adafruit_GFX.h>
+#include <Fonts/FreeMono9pt7b.h>
+#include <BLEDevice.h>
+#include <BLEServer.h>
+#include <BLEUtils.h>
+#include <BLE2902.h>
+#include <FS.h>
+#include <LittleFS.h>
+#include <ArduinoJson.h>
+#include <heltec-eink-modules.h>
+
+// ─── Display ────────────────────────────────────────────────────────────────
+EInkDisplay_VisionMasterE290 display;
+
+
+// ─── Layout (landscape 296 × 128) ───────────────────────────────────────────
+#define SCREEN_W        128
+#define SCREEN_H        296
+
+// Menu / UI font (textSize 1)
+#define CHAR_W          6
+#define CHAR_H          8
+#define MARGIN_X        4
+#define MARGIN_Y        4
+#define CONTENT_W       (SCREEN_H - MARGIN_X * 2)
+#define CHARS_PER_LINE  (CONTENT_W / CHAR_W)           // ~48
+#define LINES_PER_PAGE  ((SCREEN_W - MARGIN_Y*2 - CHAR_H - 6) / (CHAR_H + 1))
+
+// Reading font (FreeSerif9pt7b at textSize 1) — approx 6×14 px per glyph
+// Using pixel-width of 7 for safe word-wrap (some glyphs are wider)
+#define READ_CHAR_W       11         // exact xAdvance for FreeMono9pt7b
+#define READ_CHAR_H       16         // full cell height including descenders
+#define READ_LINE_SPACING 1          // tighter — mono reads cleanly
+#define READ_CHARS_PER_LINE  ((SCREEN_H - MARGIN_X * 2) / READ_CHAR_W)    // exact: ~26
+#define READ_LINES_PER_PAGE  ((SCREEN_W - MARGIN_Y*2 - CHAR_H - 10) / (READ_CHAR_H + READ_LINE_SPACING))
+
+// ─── Fast-refresh ────────────────────────────────────────────────────────────
+// Full refresh triggered only on long-press confirms (forceFull=true)
+
+// ─── Button ──────────────────────────────────────────────────────────────────
+#define BTN_PIN           21
+#define LONG_PRESS_MS     700
+#define XLONG_PRESS_MS    3000
+#define DOUBLE_MS         350
+
+// ─── BLE UUIDs ───────────────────────────────────────────────────────────────
+#define SERVICE_UUID     "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
+#define UPLOAD_CHAR_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
+#define LIST_CHAR_UUID   "beb5483e-36e1-4688-b7f5-ea07361b26a9"
+#define DELETE_CHAR_UUID "beb5483e-36e1-4688-b7f5-ea07361b26aa"
+
+#define BOOKS_DIR        "/books"
+#define META_FILE        "/meta.json"
+#define MAX_BOOKS        20
+#define CHUNK_TIMEOUT_MS 3000
+
+// ─── Bookmarks ───────────────────────────────────────────────────────────────
+#define MAX_BOOKMARKS 50
+struct Bookmark { int bookIdx; int page; };
+Bookmark bookmarks[MAX_BOOKMARKS];
+int bookmarkCount = 0;
+int bmIndex       = 0;
+
+// ─── Chapters ────────────────────────────────────────────────────────────────
+#define MAX_CHAPTERS 100
+struct Chapter { String name; int page; };
+Chapter chapters[MAX_CHAPTERS];
+int chapterCount = 0;
+int chapterIndex = 0;
+
+// ─── App States ──────────────────────────────────────────────────────────────
+enum AppState {
+  STATE_MENU,
+  STATE_LIBRARY,
+  STATE_READING,
+  STATE_OVERLAY,
+  STATE_CHAPTER_SELECT,
+  STATE_BOOKMARKS,
+  STATE_SETTINGS,
+  STATE_SETTINGS_DELETE_BOOK,
+  STATE_INFO
+};
+AppState appState    = STATE_MENU;
+AppState returnState = STATE_MENU;
+
+// ─── Main menu ───────────────────────────────────────────────────────────────
+const char* MENU_ITEMS[] = {
+  "Continue Reading",
+  "Library",
+  "Bookmarks",
+  "Settings",
+  "Info",
+  "Power Off"
+};
+const int MENU_COUNT = 6;
+int  menuIndex  = 0;
+bool bleEnabled = false;
+
+// ─── Library ─────────────────────────────────────────────────────────────────
+struct BookMeta {
+  String title;
+  String filename;
+  int    totalPages;
+  int    lastPage;
+};
+BookMeta books[MAX_BOOKS];
+int bookCount = 0;
+int libIndex  = 0;
+
+// ─── Reading ─────────────────────────────────────────────────────────────────
+int  currentBook = -1;
+int  currentPage = 0;
+#define MAX_PAGES 2000
+uint32_t pageOffsets[MAX_PAGES];
+int      totalPages = 0;
+
+// ─── Overlay menu ────────────────────────────────────────────────────────────
+const char* OVERLAY_ITEMS[] = {
+  "Chapter Select",
+  "Bookmark this page",
+  "Start from beginning",
+  "Return to Main Menu",
+  "...Return to book"
+};
+const int OVERLAY_COUNT = 5;
+int overlayIndex = 0;
+
+// ─── Settings menu ───────────────────────────────────────────────────────────
+const char* SETTINGS_ITEMS[] = {
+  "Bluetooth",
+  "Delete a book",
+  "Delete all books",
+  "Reset all progress",
+  "...Return to Menu"
+};
+const int SETTINGS_COUNT = 5;
+int settingsIndex   = 0;
+int deleteBookIndex = 0;
+int infoScrollOffset = 0;
+
+// ─── BLE upload ──────────────────────────────────────────────────────────────
+String        uploadBuffer  = "";
+String        uploadName    = "";
+bool          uploadActive  = false;
+unsigned long lastChunkTime = 0;
+
+BLEServer*         pServer     = nullptr;
+BLECharacteristic* pUploadChar = nullptr;
+BLECharacteristic* pListChar   = nullptr;
+BLECharacteristic* pDeleteChar = nullptr;
+bool bleServerRunning = false;
+
+// ─── Button state ─────────────────────────────────────────────────────────────
+enum BtnEvent { BTN_NONE, BTN_SINGLE, BTN_DOUBLE, BTN_LONG, BTN_XLONG };
+int           btnLastState   = HIGH;
+unsigned long btnPressTime   = 0;
+unsigned long btnReleaseTime = 0;
+int           pendingClicks  = 0;
+// All events now fire on button RELEASE so two long-press durations work correctly
+
+// ============================================================
+//  FORWARD DECLARATIONS
+// ============================================================
+void doUpdate(bool forceFull = false);
+
+void drawSleepQuote();
+void handleChapterSelectInput(BtnEvent e);
+
+void drawCenteredTitle(const char* title);
+void drawMenu(bool full = false);
+void drawLibrary(bool full = false);
+void drawPage(int page, bool full = false);
+void drawOverlay(bool full = false);
+void drawBookmarks(bool full = false);
+void drawSettings(bool full = false);
+void drawSettingsDeleteBook(bool full = false);
+void drawChapterSelect(bool full = false);
+void drawInfo();
+void drawMessage(const char* title, const char* body);
+
+BtnEvent readButton();
+void handleMenuInput(BtnEvent e);
+void handleLibraryInput(BtnEvent e);
+void handleReadingInput(BtnEvent e);
+void handleOverlayInput(BtnEvent e);
+void handleBookmarksInput(BtnEvent e);
+void handleSettingsInput(BtnEvent e);
+void handleSettingsDeleteBookInput(BtnEvent e);
+void handleInfoInput(BtnEvent e);
+
+void addBookmark(int bookIdx, int page);
+void deleteBookmark(int bmIdx);
+void deleteAllBookmarks();
+
+void deleteBook(int bookIdx);
+void deleteAllBooks();
+void resetAllProgress();
+
+void buildPageIndex(int bookIdx);
+String getPageText(int bookIdx, int page);
+
+// Two wrap variants: one for menu font, one for reading font
+int wrapText(const String& text, String lines[], int maxLines, int charsPerLine);
+
+void loadMeta();
+void saveMeta();
+
+void startBLE();
+void stopBLE();
+void processUploadBuffer();
+
+void goToSleep();
+
+// ============================================================
+//  SMART UPDATE
+//  forceFull=true  → full refresh (used after long-press confirms)
+//  forceFull=false → fast refresh (navigation, page turns)
+// ============================================================
+void doUpdate(bool forceFull) {
+  if (forceFull) {
+    display.fastmodeOff();
+    display.update();
+    display.fastmodeOn();
+  } else {
+    display.update();
+  }
 }
 
-/**
- * Look up a file in the zip by path, trying several normalisations:
- * exact, decoded, lowercased, decoded+lowercased.
- */
-function zipEntry(zip, path) {
-    if (!path) return null;
-    if (zip.files[path]) return zip.files[path];
-    const decoded = decodeURIComponent(path);
-    if (zip.files[decoded]) return zip.files[decoded];
-    // Case-insensitive fallback
-    const lower = path.toLowerCase();
-    const lowerDecoded = decoded.toLowerCase();
-    for (const key of Object.keys(zip.files)) {
-        if (key.toLowerCase() === lower || key.toLowerCase() === lowerDecoded) {
-            return zip.files[key];
-        }
+// ============================================================
+//  WORD-WRAP  (charsPerLine is passed in so reading/menu can differ)
+// ============================================================
+int wrapText(const String& text, String lines[], int maxLines, int charsPerLine) {
+  int lineCount = 0, pos = 0, len = text.length();
+  while (pos < len && lineCount < maxLines) {
+    if (pos > 0 && text[pos] == ' ') pos++;
+    if (pos >= len) break;
+    if (text[pos] == '\n') { lines[lineCount++] = ""; pos++; continue; }
+    if (pos + charsPerLine >= len) {
+      String chunk = text.substring(pos, len);
+      chunk.replace("\n", " ");
+      lines[lineCount++] = chunk;
+      break;
     }
-    return null;
+    int nlPos = -1;
+    for (int i = pos; i < pos + charsPerLine && i < len; i++)
+      if (text[i] == '\n') { nlPos = i; break; }
+    if (nlPos != -1) { lines[lineCount++] = text.substring(pos, nlPos); pos = nlPos + 1; continue; }
+    int breakAt = -1;
+    for (int i = pos + charsPerLine; i > pos; i--)
+      if (text[i] == ' ') { breakAt = i; break; }
+    if (breakAt == -1) { lines[lineCount++] = text.substring(pos, pos + charsPerLine); pos += charsPerLine; }
+    else               { lines[lineCount++] = text.substring(pos, breakAt); pos = breakAt + 1; }
+  }
+  return lineCount;
 }
 
-/**
- * Extract text from a Dublin Core metadata element robustly,
- * working around DOMParser's inconsistent namespace handling.
- */
-function getDCMeta(opfDoc, localName) {
-    // Try a few selector patterns browsers use
-    const selectors = [
-        `dc\\:${localName}`,
-        `${localName}`,
-        `*|${localName}`,
-    ];
-    for (const sel of selectors) {
-        try {
-            const el = opfDoc.querySelector(sel);
-            if (el?.textContent?.trim()) return el.textContent.trim();
-        } catch(e) { /* invalid selector in this browser, skip */ }
+// ============================================================
+//  BLE CALLBACKS
+// ============================================================
+class UploadCallback : public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic* c) override {
+    String val = c->getValue().c_str();
+    if (!val.length()) return;
+    if (!uploadActive) {
+      int sep = val.indexOf('|');
+      if (sep != -1) { uploadName = val.substring(0, sep); uploadBuffer = val.substring(sep+1); uploadActive = true; }
+    } else uploadBuffer += val;
+    lastChunkTime = millis();
+  }
+};
+class ListCallback : public BLECharacteristicCallbacks {
+  void onRead(BLECharacteristic* c) override {
+    String list = "";
+    for (int i = 0; i < bookCount; i++) { if (i) list += ","; list += books[i].title; }
+    c->setValue(list.c_str());
+  }
+};
+class DeleteCallback : public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic* c) override {
+    String title = c->getValue().c_str();
+    for (int i = 0; i < bookCount; i++) {
+      if (books[i].title == title || books[i].filename == title) { deleteBook(i); return; }
     }
-    // Last resort: iterate all elements
-    for (const el of opfDoc.getElementsByTagName('*')) {
-        if (el.localName === localName) {
-            const txt = el.textContent?.trim();
-            if (txt) return txt;
-        }
-    }
-    return '';
-}
-
-// ── EPUB Parsing ───────────────────────────────────────────────────────────
-document.getElementById('selectBtn').onclick = () =>
-    document.getElementById('fileInput').click();
-
-document.getElementById('fileInput').onchange = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    document.getElementById('fileInfoBox').innerHTML =
-        `<span class="file-placeholder">Processing ${file.name}...</span>`;
-    setStatus('Processing EPUB...', 'busy');
-    log(`Parsing: ${file.name}`);
-
-    try {
-        const zip = await JSZip.loadAsync(file);
-
-        // ── 1. Find OPF path from container.xml ──────────────────────────
-        let opfPath = null;
-        const containerEntry = zipEntry(zip, 'META-INF/container.xml');
-        if (containerEntry) {
-            const containerXml = await containerEntry.async("string");
-            const containerDoc = new DOMParser().parseFromString(containerXml, "text/xml");
-            const rootfile = containerDoc.querySelector("rootfile");
-            if (rootfile) opfPath = rootfile.getAttribute("full-path");
-        }
-        if (!opfPath) {
-            opfPath = Object.keys(zip.files).find(n => n.endsWith('.opf')) || null;
-        }
-
-        // Base directory is the folder containing the OPF file
-        const base = opfPath && opfPath.includes('/')
-            ? opfPath.substring(0, opfPath.lastIndexOf('/') + 1)
-            : '';
-
-        log(`OPF: ${opfPath || 'not found'}, base: "${base}"`);
-
-        let bookTitle  = file.name.replace(/\.epub$/i, '');
-        let bookAuthor = '';
-        let spineOrder = [];
-
-        if (opfPath) {
-            const opfEntry = zipEntry(zip, opfPath);
-            if (!opfEntry) throw new Error(`OPF file not found in zip: ${opfPath}`);
-
-            const opfXml = await opfEntry.async("string");
-            const opfDoc = new DOMParser().parseFromString(opfXml, "text/xml");
-
-            // ── 2. Metadata ───────────────────────────────────────────────
-            const t = getDCMeta(opfDoc, 'title');
-            if (t) bookTitle = t;
-            const c = getDCMeta(opfDoc, 'creator');
-            if (c) bookAuthor = c;
-
-            // ── 3. Build manifest id→path map ─────────────────────────────
-            // Values are absolute paths within the zip (base + href resolved)
-            const manifestById  = {}; // id  → absolute zip path
-            const manifestByPath = {}; // absolute zip path → id (for reverse lookup)
-
-            opfDoc.querySelectorAll("manifest item").forEach(el => {
-                const id   = el.getAttribute("id");
-                const href = el.getAttribute("href");
-                if (!id || !href) return;
-                // FIX: resolve relative to base, handling ../ etc.
-                const absPath = resolvePath(base, href);
-                manifestById[id]       = absPath;
-                manifestByPath[absPath] = id;
-            });
-
-            log(`Manifest: ${Object.keys(manifestById).length} items`);
-
-            // ── 4. Chapter labels from NCX ────────────────────────────────
-            const ncxLabels = {}; // absolute zip path → label
-
-            const spineEl = opfDoc.querySelector("spine");
-            const ncxId   = spineEl?.getAttribute("toc");
-            const ncxAbsPath = ncxId && manifestById[ncxId]
-                ? manifestById[ncxId]
-                : Object.keys(zip.files).find(n => n.endsWith('.ncx')) || null;
-
-            if (ncxAbsPath) {
-                const ncxEntry = zipEntry(zip, ncxAbsPath);
-                if (ncxEntry) {
-                    const ncxXml = await ncxEntry.async("string");
-                    const ncxDoc = new DOMParser().parseFromString(ncxXml, "text/xml");
-                    // NCX base dir
-                    const ncxBase = ncxAbsPath.includes('/')
-                        ? ncxAbsPath.substring(0, ncxAbsPath.lastIndexOf('/') + 1)
-                        : '';
-                    ncxDoc.querySelectorAll("navPoint").forEach(np => {
-                        const label = np.querySelector("navLabel > text")?.textContent?.trim();
-                        const src   = np.querySelector("content")?.getAttribute("src");
-                        if (label && src) {
-                            const absContentPath = resolvePath(ncxBase, src.split('#')[0]);
-                            ncxLabels[absContentPath] = label;
-                        }
-                    });
-                    log(`NCX: ${Object.keys(ncxLabels).length} chapter labels`);
-                }
-            }
-
-            // ── 5. Chapter labels from EPUB3 nav document ─────────────────
-            if (Object.keys(ncxLabels).length === 0) {
-                // Find nav item: has properties="nav" in manifest, or filename contains 'nav'
-                let navAbsPath = null;
-                opfDoc.querySelectorAll("manifest item").forEach(el => {
-                    if (el.getAttribute("properties")?.includes('nav')) {
-                        const href = el.getAttribute("href");
-                        if (href) navAbsPath = resolvePath(base, href);
-                    }
-                });
-                if (!navAbsPath) {
-                    navAbsPath = Object.keys(zip.files).find(n =>
-                        (n.endsWith('.xhtml') || n.endsWith('.html')) &&
-                        n.toLowerCase().includes('nav')
-                    ) || null;
-                }
-                if (navAbsPath) {
-                    const navEntry = zipEntry(zip, navAbsPath);
-                    if (navEntry) {
-                        const navHtml = await navEntry.async("string");
-                        const navDoc  = new DOMParser().parseFromString(navHtml, 'text/html');
-                        const navBase = navAbsPath.includes('/')
-                            ? navAbsPath.substring(0, navAbsPath.lastIndexOf('/') + 1)
-                            : '';
-                        navDoc.querySelectorAll('nav[epub\\:type="toc"] a, nav a').forEach(a => {
-                            const label = a.textContent.trim();
-                            const href  = a.getAttribute('href');
-                            if (label && href) {
-                                const absContentPath = resolvePath(navBase, href.split('#')[0]);
-                                if (!ncxLabels[absContentPath]) ncxLabels[absContentPath] = label;
-                            }
-                        });
-                        log(`NAV: ${Object.keys(ncxLabels).length} chapter labels`);
-                    }
-                }
-            }
-
-            // ── 6. Build spine order ──────────────────────────────────────
-            // FIX: skip items with linear="no" (cover images, nav docs, etc.)
-            //      unless there are no linear items at all
-            const allSpineItems = [];
-            const linearItems   = [];
-
-            opfDoc.querySelectorAll("spine itemref").forEach(el => {
-                const idref  = el.getAttribute("idref");
-                const linear = el.getAttribute("linear");
-                const absPath = manifestById[idref];
-                if (!absPath) return;
-                const item = { path: absPath, label: ncxLabels[absPath] || null };
-                allSpineItems.push(item);
-                if (linear !== 'no') linearItems.push(item);
-            });
-
-            spineOrder = linearItems.length > 0 ? linearItems : allSpineItems;
-            log(`Spine: ${spineOrder.length} items (${allSpineItems.length - linearItems.length} non-linear skipped)`);
-        }
-
-        // ── 7. Fallback: use all content files sorted, excluding nav/toc ──
-        if (spineOrder.length === 0) {
-            const NON_CONTENT = /\b(nav|toc|cover|copyright|title-page|colophon)\b/i;
-            spineOrder = Object.keys(zip.files)
-                .filter(fn =>
-                    (fn.endsWith('.xhtml') || fn.endsWith('.html')) &&
-                    !NON_CONTENT.test(fn)
-                )
-                .sort()
-                .map(path => ({ path, label: null }));
-            log(`Fallback spine: ${spineOrder.length} files`, 'warn');
-        }
-
-// ── 8. Extract text from each spine document ──────────────────────────
-const BLOCK_TAGS = new Set([
-    'P','DIV','H1','H2','H3','H4','H5','H6',
-    'LI','TR','TD','TH','BLOCKQUOTE','PRE',
-    'SECTION','ARTICLE','HEADER','FOOTER','ASIDE',
-    'BR','HR','DT','DD','FIGURE','FIGCAPTION'
-]);
-
-function extractText(node) {
-    if (node.nodeType === Node.TEXT_NODE) return node.textContent;
-    if (node.nodeType !== Node.ELEMENT_NODE) return '';
-    const tag = node.tagName?.toUpperCase();
-    // Skip invisible/boilerplate elements
-    if (['SCRIPT','STYLE','HEAD','NAV','ASIDE'].includes(tag)) return '';
-    let result = '';
-    for (const child of node.childNodes) {
-        result += extractText(child);
-    }
-    // Wrap block elements with newlines so words don't merge
-    if (BLOCK_TAGS.has(tag)) {
-        return '\n' + result.trim() + '\n';
-    }
-    return result;
-}
-
-let text = "";
-let chapterCount  = 0;
-let skippedCount  = 0;
-
-for (const { path, label } of spineOrder) {
-    const entry = zipEntry(zip, path);
-    if (!entry) {
-        log(`  Skipped (not in zip): ${path}`, 'warn');
-        skippedCount++;
-        continue;
-    }
-    const html = await entry.async("string");
-    const doc  = new DOMParser().parseFromString(html, 'text/html');
-    const bodyText = doc.body ? extractText(doc.body).trim() : "";
-    if (!bodyText) continue;
-    if (label) { chapterCount++; text += `\n\n=== ${label} ===\n\n`; }
-    text += bodyText + "\n\n";
-}
-
-        // ── 9. Normalise whitespace ───────────────────────────────────────
-        let normalized = text.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
-
-        // ── 10. Sanitise to ASCII-safe characters ─────────────────────────
-        cleanText = normalized
-            .replace(/[\u2018\u2019\u201A\u201B\u2032\u2035]/g, "'")
-            .replace(/[\u201C\u201D\u201E\u201F\u2033\u2036]/g, '"')
-            .replace(/[\u2013\u2014\u2015]/g, '--').replace(/\u2012/g, '-')
-            .replace(/\u2026/g, '...')
-            .replace(/[\u00A0\u202F\u2007\u2009\u200A]/g, ' ')
-            .replace(/[\u2022\u2023\u2043\u204C\u204D]/g, '*')
-            .replace(/\u2044/g, '/').replace(/[\u2039\u203A]/g, m => m === '\u2039' ? '<' : '>')
-            .replace(/\uFB00/g,'ff').replace(/\uFB01/g,'fi').replace(/\uFB02/g,'fl')
-            .replace(/\uFB03/g,'ffi').replace(/\uFB04/g,'ffl')
-            .replace(/[àáâãäåāăą]/g,'a').replace(/[ÀÁÂÃÄÅĀĂĄ]/g,'A')
-            .replace(/[èéêëēĕęě]/g,'e').replace(/[ÈÉÊËĒĔĘĚ]/g,'E')
-            .replace(/[ìíîïīĭįı]/g,'i').replace(/[ÌÍÎÏĪĬĮ]/g,'I')
-            .replace(/[òóôõöøōŏő]/g,'o').replace(/[ÒÓÔÕÖØŌŎŐ]/g,'O')
-            .replace(/[ùúûüūŭůű]/g,'u').replace(/[ÙÚÛÜŪŬŮŰ]/g,'U')
-            .replace(/[ýÿ]/g,'y').replace(/[ÝŸ]/g,'Y').replace(/[ñ]/g,'n').replace(/[Ñ]/g,'N')
-            .replace(/[çćĉċč]/g,'c').replace(/[ÇĆĈĊČ]/g,'C')
-            .replace(/[ß]/g,'ss').replace(/[æ]/g,'ae').replace(/[Æ]/g,'AE')
-            .replace(/[œ]/g,'oe').replace(/[Œ]/g,'OE')
-            .replace(/[ð]/g,'d').replace(/[Ð]/g,'D').replace(/[þ]/g,'th').replace(/[Þ]/g,'Th')
-            .replace(/[\u200B\u200C\u200D\uFEFF]/g,'')
-            .replace(/[^\x09\x0A\x20-\x7E]/g,'');
-
-        const stripped = normalized.length - cleanText.length;
-        if (stripped > 0) log(`Sanitized ${stripped} non-ASCII characters.`, 'warn');
-
-        const safeTitle = bookTitle.replace(/[^a-zA-Z0-9 \-_]/g,'').trim() || 'book';
-        fileName = safeTitle + '.txt';
-
-        document.getElementById('fileInfoBox').innerHTML =
-            `<div class="file-title">${bookTitle}</div>` +
-            `<div class="file-meta">${bookAuthor ? bookAuthor + ' &middot; ' : ''}${chapterCount} chapters &middot; ${(cleanText.length/1024).toFixed(1)} KB</div>`;
-
-        setStatus('Ready to send', 'ok');
-        document.getElementById('uploadBtn').disabled = !bleDevice?.gatt?.connected;
-        log(`Title: "${bookTitle}"${bookAuthor ? ' by ' + bookAuthor : ''}`, 'ok');
-        log(`${chapterCount} chapters, ${cleanText.length.toLocaleString()} characters`);
-        log(`Will send as: ${fileName}`);
-
-    } catch (err) {
-        log(`Parse error: ${err.message}`, 'err');
-        setStatus('EPUB parsing failed', 'error');
-        document.getElementById('fileInfoBox').innerHTML =
-            `<span class="file-placeholder">Error reading file — check log</span>`;
-    }
+  }
+};
+class ServerCallbacks : public BLEServerCallbacks {
+  void onConnect(BLEServer*)    override { }
+  void onDisconnect(BLEServer*) override { BLEDevice::startAdvertising(); }
 };
 
-// ── BLE Connection ─────────────────────────────────────────────────────────
-document.getElementById('bleConnectBtn').onclick = async () => {
-    if (bleDevice?.gatt?.connected) { bleDevice.gatt.disconnect(); return; }
+// ============================================================
+//  SETUP
+// ============================================================
+void setup() {
+  pinMode(BTN_PIN, INPUT_PULLUP);
+  esp_sleep_enable_ext0_wakeup((gpio_num_t)BTN_PIN, 0);
 
-    if (!window.isSecureContext) {
-        log('Page must be served over HTTPS for Web Bluetooth.', 'err');
-        setStatus('HTTPS required', 'error'); return;
-    }
-    if (!navigator.bluetooth) {
-        log('Web Bluetooth unavailable.', 'err');
-        setStatus('Bluetooth unavailable', 'error'); return;
-    }
-    let btAvailable = false;
-    try { btAvailable = await navigator.bluetooth.getAvailability(); } catch(e) {}
-    if (!btAvailable) {
-        log('Bluetooth is off or blocked.', 'err');
-        setStatus('Bluetooth off', 'error'); return;
-    }
-    log('Pre-flight OK — opening device picker...');
-    await ensureConnected();
-};
+  if (!LittleFS.begin(true)) { LittleFS.format(); LittleFS.begin(); }
+  if (!LittleFS.exists(BOOKS_DIR)) LittleFS.mkdir(BOOKS_DIR);
+  loadMeta();
 
-async function ensureConnected() {
-    if (bleDevice?.gatt?.connected) return true;
-    try {
-        setStatus('Searching for device...', 'busy');
-        bleDevice = await navigator.bluetooth.requestDevice({
-            filters: [{ name: 'MiniInkBook' }],
-            optionalServices: [SERVICE_UUID]
-        });
-        bleDevice.addEventListener('gattserverdisconnected', () => {
-            setStatus('Disconnected', 'error');
-            setConnected(false);
-            document.getElementById('uploadBtn').disabled = true;
-            document.getElementById('fileListSection').style.display = 'none';
-            log('Device disconnected.', 'warn');
-        });
-        setStatus('Connecting...', 'busy');
-        bleServer = await bleDevice.gatt.connect();
-        setConnected(true);
-        setStatus('Connected to S3-Reader-BLE', 'ok');
-        log('Connected to S3-Reader-BLE', 'ok');
-        if (cleanText) document.getElementById('uploadBtn').disabled = false;
-        return true;
-    } catch (err) {
-        log(`Connection failed: ${err.message}`, 'err');
-        setStatus('Connection failed', 'error');
-        setConnected(false);
-        return false;
-    }
+  display.setRotation(1);
+  display.setTextWrap(false);
+  display.fastmodeOff();
+  display.update();         // full refresh on wake/boot
+  display.fastmodeOn();
+  drawMenu();
 }
 
-// ── Upload ─────────────────────────────────────────────────────────────────
-document.getElementById('uploadBtn').onclick = async () => {
-    if (!cleanText) { log('No EPUB loaded.', 'warn'); return; }
-    if (!await ensureConnected()) return;
-    try {
-        const service = await bleServer.getPrimaryService(SERVICE_UUID);
-        const char    = await service.getCharacteristic(UPLOAD_CHAR_UUID);
+// ============================================================
+//  LOOP
+// ============================================================
+void loop() {
+  if (uploadActive && millis() - lastChunkTime > CHUNK_TIMEOUT_MS)
+    processUploadBuffer();
 
-        setStatus('Uploading...', 'busy');
-        const wrap = document.getElementById('progressWrap');
-        const prog = document.getElementById('progressBar');
-        const pct  = document.getElementById('progressPct');
-        wrap.style.display = 'block';
-        prog.value = 0;
+  BtnEvent e = readButton();
+  if (e == BTN_NONE) return;
 
-        const encoder  = new TextEncoder();
-        const prefix   = encoder.encode(fileName + "|");
-        const body     = encoder.encode(cleanText);
-        const combined = new Uint8Array(prefix.length + body.length);
-        combined.set(prefix, 0);
-        combined.set(body, prefix.length);
 
-        const total = combined.length;
-        for (let i = 0; i < total; i += CHUNK_SIZE) {
-            const chunk = combined.slice(i, i + CHUNK_SIZE);
-            await char.writeValue(chunk);
-            const p = Math.round(((i + chunk.length) / total) * 100);
-            prog.value = p; pct.textContent = p + '%';
-            if (i % (CHUNK_SIZE * 20) === 0) await new Promise(r => setTimeout(r, 10));
+  switch (appState) {
+    case STATE_MENU:                 handleMenuInput(e);              break;
+    case STATE_LIBRARY:              handleLibraryInput(e);           break;
+    case STATE_READING:              handleReadingInput(e);           break;
+    case STATE_OVERLAY:              handleOverlayInput(e);           break;
+    case STATE_CHAPTER_SELECT:       handleChapterSelectInput(e);     break;
+    case STATE_BOOKMARKS:            handleBookmarksInput(e);         break;
+    case STATE_SETTINGS:             handleSettingsInput(e);          break;
+    case STATE_SETTINGS_DELETE_BOOK: handleSettingsDeleteBookInput(e);break;
+    case STATE_INFO:                 handleInfoInput(e);              break;
+  }
+}
+
+// ============================================================
+//  BUTTON LOGIC  -- all events fire on button RELEASE
+//  Hold duration is measured at the moment of release so
+//  BTN_LONG and BTN_XLONG are clearly distinguished.
+// ============================================================
+BtnEvent readButton() {
+  int reading = digitalRead(BTN_PIN);
+  BtnEvent result = BTN_NONE;
+  unsigned long now = millis();
+
+  // Falling edge: record press start
+  if (reading == LOW && btnLastState == HIGH) {
+    btnPressTime = now;
+  }
+
+  // Rising edge: decide event based on how long it was held
+  if (reading == HIGH && btnLastState == LOW) {
+    unsigned long held = now - btnPressTime;
+    if (held >= XLONG_PRESS_MS) {
+      result = BTN_XLONG;
+      pendingClicks = 0;
+    } else if (held >= LONG_PRESS_MS) {
+      result = BTN_LONG;
+      pendingClicks = 0;
+    } else {
+      pendingClicks++;
+      btnReleaseTime = now;
+    }
+  }
+
+  // After double-click window expires, emit single or double
+  if (pendingClicks > 0 && reading == HIGH && now - btnReleaseTime > DOUBLE_MS) {
+    result = (pendingClicks >= 2) ? BTN_DOUBLE : BTN_SINGLE;
+    pendingClicks = 0;
+  }
+
+  btnLastState = reading;
+  return result;
+}
+
+// ============================================================
+//  INPUT HANDLERS
+//
+//  NEW SCHEME:
+//    Menus:   1 click = next/down  |  2 clicks = prev/up  |  hold = select
+//    Reading: 1 click = next page  |  2 clicks = prev page |  hold = overlay
+//    Overlay: 1 click = next/down  |  2 clicks = prev/up  |  hold = confirm
+// ============================================================
+
+void handleMenuInput(BtnEvent e) {
+  if (e == BTN_SINGLE) { menuIndex = (menuIndex + 1) % MENU_COUNT; drawMenu(); return; }
+  if (e == BTN_DOUBLE) { menuIndex = (menuIndex - 1 + MENU_COUNT) % MENU_COUNT; drawMenu(); return; }
+  if (e == BTN_XLONG) {
+    drawSleepQuote();
+    goToSleep();
+    return;
+  }
+  if (e == BTN_LONG) {
+    switch (menuIndex) {
+      case 0: // Continue Reading
+        // FIX 3: Rebuild page index before continuing so pageOffsets[] is
+        // always valid — loadMeta() restores currentBook/currentPage but
+        // does not populate the in-RAM page index, causing out-of-bounds
+        // reads (and a crash) if we skip buildPageIndex() here.
+        if (currentBook >= 0) {
+          buildPageIndex(currentBook);
+          if (totalPages == 0) {
+            drawMessage("Error", "Could not load book.");
+            delay(1500);
+            drawMenu(true);
+            break;
+          }
+          // Clamp page in case the book was re-uploaded at a different length
+          if (currentPage >= totalPages) currentPage = 0;
+          appState = STATE_READING;
+          drawPage(currentPage, true);
+        } else {
+          drawMessage("No book open", "Open Library to\npick a book.");
+          delay(1500);
+          drawMenu(true);
         }
-
-        setStatus('Transfer complete', 'ok');
-        log(`Sent "${fileName}" (${(total/1024).toFixed(1)} KB)`, 'ok');
-        prog.value = 100; pct.textContent = '100%';
-        setTimeout(() => { wrap.style.display = 'none'; }, 3000);
-    } catch (err) {
-        log(`Upload failed: ${err.message}`, 'err');
-        setStatus('Upload failed', 'error');
+        break;
+      case 1: libIndex = 0; appState = STATE_LIBRARY;   drawLibrary(true);   break;
+      case 2: bmIndex  = 0; appState = STATE_BOOKMARKS; drawBookmarks(true); break;
+      case 3: settingsIndex = 0; appState = STATE_SETTINGS; drawSettings(true); break;
+      case 4: appState = STATE_INFO; infoScrollOffset = 0; drawInfo(); break;
+      case 5: drawSleepQuote(); delay(800); goToSleep(); break;
     }
-};
+  }
+}
 
-// ── Library Management ─────────────────────────────────────────────────────
-async function fetchFiles() {
-    if (!await ensureConnected()) return;
-    try {
-        setStatus('Loading library...', 'busy');
-        const service = await bleServer.getPrimaryService(SERVICE_UUID);
-        const char    = await service.getCharacteristic(LIST_CHAR_UUID);
-        const value   = await char.readValue();
-        const list    = new TextDecoder().decode(value);
+void handleLibraryInput(BtnEvent e) {
+  if (e == BTN_SINGLE) { libIndex = (libIndex + 1) % (bookCount + 1); drawLibrary(); }
+  else if (e == BTN_DOUBLE) { libIndex = (libIndex - 1 + bookCount + 1) % (bookCount + 1); drawLibrary(); }
+  else if (e == BTN_LONG) {
+    if (bookCount == 0 || libIndex == bookCount) {
+      // "Back" row selected, or no books
+      appState = STATE_MENU; drawMenu(true); return;
+    }
+    currentBook = libIndex;
+    currentPage = books[currentBook].lastPage;
+    buildPageIndex(currentBook);
+    appState = STATE_READING;
+    drawPage(currentPage, true);
+  }
+}
 
-        const container = document.getElementById('fileContainer');
-        container.innerHTML = '';
-        document.getElementById('fileListSection').style.display = 'block';
+void handleReadingInput(BtnEvent e) {
+  if (e == BTN_XLONG) {
+    appState = STATE_MENU;
+    drawMenu(true);
+    return;
+  }
+  if (e == BTN_SINGLE) {
+    if (currentPage < totalPages - 1) {
+      currentPage++; books[currentBook].lastPage = currentPage; saveMeta(); drawPage(currentPage);
+    }
+  } else if (e == BTN_DOUBLE) {
+    if (currentPage > 0) {
+      currentPage--; books[currentBook].lastPage = currentPage; saveMeta(); drawPage(currentPage);
+    }
+  } else if (e == BTN_LONG) {
+    overlayIndex = 0;
+    appState = STATE_OVERLAY;
+    drawOverlay(true);
+  }
+}
 
-        if (!list.trim()) {
-            container.innerHTML = '<p class="empty-msg">No books on device</p>';
-            setStatus('Library empty', '');
-            return;
+void handleOverlayInput(BtnEvent e) {
+  if (e == BTN_SINGLE) { overlayIndex = (overlayIndex + 1) % OVERLAY_COUNT; drawOverlay(); }
+  else if (e == BTN_DOUBLE) { overlayIndex = (overlayIndex - 1 + OVERLAY_COUNT) % OVERLAY_COUNT; drawOverlay(); }
+  else if (e == BTN_LONG) {
+    switch (overlayIndex) {
+      case 0: // Chapter Select
+        if (chapterCount == 0) {
+          drawMessage("No Chapters", "No === markers\nfound in this book.");
+          delay(1500);
+          drawOverlay(true);
+        } else {
+          chapterIndex = 0;
+          appState = STATE_CHAPTER_SELECT;
+          drawChapterSelect(true);
         }
-
-        const files = list.split(',').filter(Boolean);
-        files.forEach(title => {
-            const item = document.createElement('div');
-            item.className = 'book-item';
-            item.innerHTML = `
-                <div class="book-item-title">${title}</div>
-                <button class="btn-delete" data-title="${title}">Remove</button>
-            `;
-            item.querySelector('.btn-delete').onclick = () => deleteFile(title);
-            container.appendChild(item);
-        });
-
-        setStatus(`${files.length} book${files.length !== 1 ? 's' : ''} on device`, 'ok');
-        log(`Library: ${files.length} book(s)`, 'ok');
-    } catch (err) {
-        log(`Library fetch failed: ${err.message}`, 'err');
-        setStatus('Fetch failed', 'error');
+        break;
+      case 1: // Bookmark this page
+        addBookmark(currentBook, currentPage);
+        drawMessage("Bookmarked!", books[currentBook].title.substring(0,20).c_str());
+        delay(1200);
+        appState = STATE_READING;
+        drawPage(currentPage, true);
+        break;
+      case 2: // Start from beginning
+        currentPage = 0;
+        books[currentBook].lastPage = 0;
+        saveMeta();
+        appState = STATE_READING;
+        drawPage(0, true);
+        break;
+      case 3: // Return to Main Menu
+        appState = STATE_MENU;
+        drawMenu(true);
+        break;
+      case 4: // Back to book
+        // FIX 1 & 2: appState was never set here, so the device stayed in
+        // STATE_OVERLAY after drawPage() returned. This caused the overlay
+        // to reappear on the next button press AND made "Continue Reading"
+        // from the main menu re-enter the overlay instead of the book.
+        appState = STATE_READING;
+        drawPage(currentPage, true);
+        break;
     }
+  }
 }
 
-async function deleteFile(title) {
-    if (!confirm(`Remove "${title}" from the device?`)) return;
-    try {
-        setStatus(`Removing...`, 'busy');
-        const service = await bleServer.getPrimaryService(SERVICE_UUID);
-        const char    = await service.getCharacteristic(DELETE_CHAR_UUID);
-        await char.writeValue(new TextEncoder().encode(title));
-        log(`Removed: ${title}`, 'ok');
-        await new Promise(r => setTimeout(r, 300));
-        fetchFiles();
-    } catch (err) {
-        log(`Remove failed: ${err.message}`, 'err');
-        setStatus('Remove failed', 'error');
+void handleChapterSelectInput(BtnEvent e) {
+  int totalItems = chapterCount + 1; // +1 for Back
+  if (e == BTN_SINGLE) { chapterIndex = (chapterIndex + 1) % totalItems; drawChapterSelect(false); }
+  else if (e == BTN_DOUBLE) { chapterIndex = (chapterIndex - 1 + totalItems) % totalItems; drawChapterSelect(false); }
+  else if (e == BTN_LONG) {
+    if (chapterIndex == chapterCount) {
+      // Back to overlay
+      overlayIndex = 0;
+      appState = STATE_OVERLAY;
+      drawOverlay(true);
+      return;
     }
+    currentPage = chapters[chapterIndex].page;
+    books[currentBook].lastPage = currentPage;
+    saveMeta();
+    appState = STATE_READING;
+    drawPage(currentPage, true);
+  }
 }
 
-document.getElementById('manageBtn').onclick  = fetchFiles;
-document.getElementById('refreshBtn').onclick = fetchFiles;
-</script>
-</body>
-</html>
+void handleBookmarksInput(BtnEvent e) {
+  int totalItems = bookmarkCount + 1; // +1 for Back
+  if (e == BTN_SINGLE) { bmIndex = (bmIndex + 1) % totalItems; drawBookmarks(); }
+  else if (e == BTN_DOUBLE) { bmIndex = (bmIndex - 1 + totalItems) % totalItems; drawBookmarks(); }
+  else if (e == BTN_LONG) {
+    if (bmIndex == bookmarkCount) {
+      // "Back" row
+      appState = STATE_MENU; drawMenu(true); return;
+    }
+    int bi = bookmarks[bmIndex].bookIdx;
+    int pg = bookmarks[bmIndex].page;
+    if (bi >= 0 && bi < bookCount) {
+      currentBook = bi;
+      currentPage = pg;
+      books[currentBook].lastPage = pg;
+      buildPageIndex(currentBook);
+      saveMeta();
+      appState = STATE_READING;
+      drawPage(currentPage, true);
+    }
+  }
+}
+
+void handleSettingsInput(BtnEvent e) {
+  if (e == BTN_SINGLE) { settingsIndex = (settingsIndex + 1) % SETTINGS_COUNT; drawSettings(); }
+  else if (e == BTN_DOUBLE) { settingsIndex = (settingsIndex - 1 + SETTINGS_COUNT) % SETTINGS_COUNT; drawSettings(); }
+  else if (e == BTN_LONG) {
+    switch (settingsIndex) {
+      case 0: // Bluetooth toggle
+        bleEnabled = !bleEnabled;
+        bleEnabled ? startBLE() : stopBLE();
+        drawSettings(true);
+        break;
+      case 1: // Delete a book
+        if (bookCount == 0) {
+          drawMessage("No books", "Library is empty.");
+          delay(1200); drawSettings(true);
+        } else {
+          deleteBookIndex = 0;
+          appState = STATE_SETTINGS_DELETE_BOOK;
+          drawSettingsDeleteBook(true);
+        }
+        break;
+      case 2: // Delete all books
+        deleteAllBooks();
+        drawMessage("Done", "All books deleted.");
+        delay(1200); drawSettings(true);
+        break;
+      case 3: // Reset all progress
+        resetAllProgress();
+        drawMessage("Done", "All progress reset.");
+        delay(1200); drawSettings(true);
+        break;
+      case 4: // Back
+        appState = STATE_MENU; drawMenu(true);
+        break;
+    }
+  }
+}
+
+void handleSettingsDeleteBookInput(BtnEvent e) {
+  if (e == BTN_SINGLE) { deleteBookIndex = (deleteBookIndex + 1) % bookCount; drawSettingsDeleteBook(); }
+  else if (e == BTN_DOUBLE) { deleteBookIndex = (deleteBookIndex - 1 + bookCount) % bookCount; drawSettingsDeleteBook(); }
+  else if (e == BTN_LONG) {
+    String title = books[deleteBookIndex].title;
+    deleteBook(deleteBookIndex);
+    drawMessage("Deleted", title.substring(0, 24).c_str());
+    delay(1200);
+    if (bookCount == 0) { appState = STATE_SETTINGS; drawSettings(true); }
+    else { deleteBookIndex = 0; drawSettingsDeleteBook(true); }
+  }
+}
+
+// ─── Info line count (used in handleInfoInput and drawInfo) ─────────────────
+#define INFO_LINE_COUNT 30
+
+#define INFO_SCROLL_STEP 3
+
+void handleInfoInput(BtnEvent e) {
+  int visibleLines = (SCREEN_W - MARGIN_Y*2 - CHAR_H - 8) / (CHAR_H + 1);
+  int maxScroll = max(0, INFO_LINE_COUNT - visibleLines);
+  if (e == BTN_SINGLE) {
+    infoScrollOffset = min(infoScrollOffset + INFO_SCROLL_STEP, maxScroll);
+    drawInfo();
+  } else if (e == BTN_DOUBLE) {
+    infoScrollOffset = max(infoScrollOffset - INFO_SCROLL_STEP, 0);
+    drawInfo();
+  } else if (e == BTN_LONG || e == BTN_XLONG) {
+    infoScrollOffset = 0;
+    appState = STATE_MENU;
+    drawMenu(true);
+  }
+}
+
+// ============================================================
+//  BOOKMARK OPERATIONS
+// ============================================================
+void addBookmark(int bookIdx, int page) {
+  for (int i = 0; i < bookmarkCount; i++)
+    if (bookmarks[i].bookIdx == bookIdx && bookmarks[i].page == page) return;
+  if (bookmarkCount >= MAX_BOOKMARKS) return;
+  bookmarks[bookmarkCount++] = { bookIdx, page };
+  saveMeta();
+}
+
+void deleteBookmark(int bmIdx) {
+  if (bmIdx < 0 || bmIdx >= bookmarkCount) return;
+  for (int i = bmIdx; i < bookmarkCount - 1; i++) bookmarks[i] = bookmarks[i+1];
+  bookmarkCount--;
+  saveMeta();
+}
+
+void deleteAllBookmarks() {
+  bookmarkCount = 0;
+  saveMeta();
+}
+
+// ============================================================
+//  BOOK / PROGRESS OPERATIONS
+// ============================================================
+void deleteBook(int bookIdx) {
+  if (bookIdx < 0 || bookIdx >= bookCount) return;
+  LittleFS.remove(String(BOOKS_DIR) + "/" + books[bookIdx].filename);
+  for (int i = bookmarkCount - 1; i >= 0; i--)
+    if (bookmarks[i].bookIdx == bookIdx) deleteBookmark(i);
+  for (int i = 0; i < bookmarkCount; i++)
+    if (bookmarks[i].bookIdx > bookIdx) bookmarks[i].bookIdx--;
+  for (int i = bookIdx; i < bookCount - 1; i++) books[i] = books[i+1];
+  bookCount--;
+  if (currentBook == bookIdx) currentBook = -1;
+  else if (currentBook > bookIdx) currentBook--;
+  saveMeta();
+}
+
+void deleteAllBooks() {
+  File dir = LittleFS.open(BOOKS_DIR);
+  if (dir) {
+    File f = dir.openNextFile();
+    while (f) {
+      String path = String(BOOKS_DIR) + "/" + f.name();
+      f.close();
+      LittleFS.remove(path);
+      f = dir.openNextFile();
+    }
+    dir.close();
+  }
+  bookCount     = 0;
+  bookmarkCount = 0;
+  currentBook   = -1;
+  currentPage   = 0;
+  saveMeta();
+}
+
+void resetAllProgress() {
+  for (int i = 0; i < bookCount; i++) books[i].lastPage = 0;
+  deleteAllBookmarks();
+  currentPage = 0;
+  saveMeta();
+}
 
 
+// ============================================================
+//  DISPLAY HELPERS  (menus always use textSize 1)
+// ============================================================
+void drawCenteredTitle(const char* title) {
+  int len    = strlen(title);
+  int totalX = len * CHAR_W;
+  int x      = (SCREEN_H - totalX) / 2;
+  if (x < 0) x = 0;
+  display.setTextSize(1);
+  display.setCursor(x, MARGIN_Y);
+  display.print(title);
+  display.drawLine(0, MARGIN_Y + CHAR_H + 2, SCREEN_H, MARGIN_Y + CHAR_H + 2, BLACK);
+}
+
+void drawRow(int x, int y, const String& label, bool selected) {
+  display.setTextSize(1);
+  display.setCursor(x, y);
+  display.print(selected ? "* " : "  ");
+  display.print(label);
+}
+
+// ─── MAIN MENU ───────────────────────────────────────────────────────────────
+void drawMenu(bool full) {
+  display.clearMemory();
+  display.setTextSize(1);
+  display.setTextColor(BLACK);
+
+  drawCenteredTitle("Mini InkBook");
+  if (bleEnabled) {
+    display.setCursor(SCREEN_H - CHAR_W * 5 - MARGIN_X, MARGIN_Y);
+    display.print("[BLE]");
+  }
+
+  int y = MARGIN_Y + CHAR_H + 6;
+  for (int i = 0; i < MENU_COUNT; i++) {
+    String label;
+    if (i == 0) {
+      label = "Continue: ";
+      label += (currentBook >= 0) ? books[currentBook].title.substring(0, 18) : "---";
+    } else {
+      label = MENU_ITEMS[i];
+    }
+    drawRow(MARGIN_X, y, label, i == menuIndex);
+    y += CHAR_H + 2;
+  }
+  doUpdate(full);
+}
+
+// ─── LIBRARY ─────────────────────────────────────────────────────────────────
+#define LIB_VISIBLE 8
+void drawLibrary(bool full) {
+  display.clearMemory();
+  display.setTextSize(1);
+  display.setTextColor(BLACK);
+  drawCenteredTitle("Library");
+
+  if (bookCount == 0) {
+    display.setCursor(MARGIN_X, MARGIN_Y + CHAR_H + 6);
+    display.print("No books yet.");
+    display.setCursor(MARGIN_X, MARGIN_Y + CHAR_H + 6 + CHAR_H + 2);
+    display.print("Enable BLE to send .txt files.");
+    // Back row
+    int y = MARGIN_Y + CHAR_H + 6 + (CHAR_H + 2) * 3;
+    drawRow(MARGIN_X, y, "...Return to Menu", libIndex == 0);
+    doUpdate(full); return;
+  }
+
+  int totalItems = bookCount + 1; // +1 for Back
+  int windowStart = (libIndex / LIB_VISIBLE) * LIB_VISIBLE;
+  int y = MARGIN_Y + CHAR_H + 6;
+  for (int i = windowStart; i < min(windowStart + LIB_VISIBLE, totalItems); i++) {
+    if (i == bookCount) {
+      drawRow(MARGIN_X, y, "...Return to Menu", i == libIndex);
+    } else {
+      char pg[8]; sprintf(pg, "[%d]", books[i].lastPage + 1);
+      int maxT = CHARS_PER_LINE - 2 - (int)strlen(pg) - 1;
+      String label = books[i].title.substring(0, maxT) + " " + pg;
+      drawRow(MARGIN_X, y, label, i == libIndex);
+    }
+    y += CHAR_H + 2;
+  }
+  if (totalItems > LIB_VISIBLE) {
+    char pos[10]; sprintf(pos, "%d/%d", libIndex + 1, totalItems);
+    display.setCursor(SCREEN_H - strlen(pos) * CHAR_W - MARGIN_X, MARGIN_Y);
+    display.print(pos);
+  }
+  doUpdate(full);
+}
+
+// ─── READING  (FreeSerif9pt7b for comfortable reading) ───────────────────────
+void drawPage(int page, bool full) {
+  if (currentBook < 0 || page >= totalPages) return;
+  display.clearMemory();
+  display.setTextColor(BLACK);
+
+  // ── Header: title + page counter at small size ──
+  display.setFont(nullptr);
+  display.setTextSize(1);
+  String header = books[currentBook].title.substring(0, 22);
+  char pg[14]; sprintf(pg, " %d/%d", page + 1, totalPages);
+  header += pg;
+  display.setCursor(MARGIN_X, MARGIN_Y);
+  display.print(header);
+  display.drawLine(0, MARGIN_Y + CHAR_H + 2, SCREEN_H, MARGIN_Y + CHAR_H + 2, BLACK);
+
+  // Bookmark indicator
+  for (int i = 0; i < bookmarkCount; i++) {
+    if (bookmarks[i].bookIdx == currentBook && bookmarks[i].page == page) {
+      display.setCursor(SCREEN_H - CHAR_W * 3 - MARGIN_X, MARGIN_Y);
+      display.print("[B]");
+      break;
+    }
+  }
+
+  // ── Body text with serif font at textSize 1 ──
+  display.setFont(&FreeMono9pt7b);     // was &FreeSerif9pt7b
+  display.setTextSize(1);
+  String rawText = getPageText(currentBook, page);
+  String lines[READ_LINES_PER_PAGE];
+  int lineCount = wrapText(rawText, lines, READ_LINES_PER_PAGE, READ_CHARS_PER_LINE);
+
+  // For proportional fonts, y cursor is the baseline
+  int y = MARGIN_Y + CHAR_H + 6 + READ_CHAR_H;
+  for (int i = 0; i < lineCount; i++) {
+    display.setCursor(MARGIN_X, y);
+    display.print(lines[i]);
+    y += READ_CHAR_H + READ_LINE_SPACING;
+  }
+
+  // Restore default font/size for any subsequent UI
+  display.setFont(nullptr);
+  display.setTextSize(1);
+  doUpdate(full);
+}
+
+// ─── OVERLAY (in-book quick menu) ────────────────────────────────────────────
+void drawOverlay(bool full) {
+  display.clearMemory();
+  display.setTextSize(1);
+  display.setTextColor(BLACK);
+
+  drawCenteredTitle("Quick Menu");
+
+  int y = MARGIN_Y + CHAR_H + 6;
+  for (int i = 0; i < OVERLAY_COUNT; i++) {
+    drawRow(MARGIN_X, y, OVERLAY_ITEMS[i], i == overlayIndex);
+    y += CHAR_H + 4;
+  }
+
+  display.setCursor(MARGIN_X, SCREEN_W - CHAR_H - 2);
+  char ctx[40];
+  sprintf(ctx, "p.%d  %s", currentPage + 1, books[currentBook].title.substring(0,16).c_str());
+  display.print(ctx);
+
+  doUpdate(full);
+}
+
+// ─── CHAPTER SELECT ──────────────────────────────────────────────────────────
+#define CH_VISIBLE 8
+void drawChapterSelect(bool full) {
+  display.clearMemory();
+  display.setTextSize(1);
+  display.setTextColor(BLACK);
+  drawCenteredTitle("Chapters");
+
+  int totalItems = chapterCount + 1; // +1 for Back
+  int windowStart = (chapterIndex / CH_VISIBLE) * CH_VISIBLE;
+  int y = MARGIN_Y + CHAR_H + 6;
+  for (int i = windowStart; i < min(windowStart + CH_VISIBLE, totalItems); i++) {
+    if (i == chapterCount) {
+      drawRow(MARGIN_X, y, "...Return to Book", i == chapterIndex);
+    } else {
+      char pgBuf[8]; sprintf(pgBuf, " p.%d", chapters[i].page + 1);
+      int maxName = CHARS_PER_LINE - 2 - (int)strlen(pgBuf);
+      String label = chapters[i].name.substring(0, maxName) + pgBuf;
+      drawRow(MARGIN_X, y, label, i == chapterIndex);
+    }
+    y += CHAR_H + 2;
+  }
+  if (totalItems > CH_VISIBLE) {
+    char pos[10]; sprintf(pos, "%d/%d", chapterIndex + 1, totalItems);
+    display.setCursor(SCREEN_H - strlen(pos) * CHAR_W - MARGIN_X, MARGIN_Y);
+    display.print(pos);
+  }
+  doUpdate(full);
+}
+
+// ─── BOOKMARKS ───────────────────────────────────────────────────────────────
+#define BM_VISIBLE 8
+void drawBookmarks(bool full) {
+  display.clearMemory();
+  display.setTextSize(1);
+  display.setTextColor(BLACK);
+  drawCenteredTitle("Bookmarks");
+
+  if (bookmarkCount == 0) {
+    display.setCursor(MARGIN_X, MARGIN_Y + CHAR_H + 6);
+    display.print("No bookmarks yet.");
+    display.setCursor(MARGIN_X, MARGIN_Y + CHAR_H + 6 + CHAR_H + 2);
+    display.print("Open Quick Menu while reading.");
+    int y = MARGIN_Y + CHAR_H + 6 + (CHAR_H + 2) * 3;
+    drawRow(MARGIN_X, y, "...Return to Menu", bmIndex == 0);
+    doUpdate(full); return;
+  }
+
+  int totalItems = bookmarkCount + 1; // +1 for Back
+  int windowStart = (bmIndex / BM_VISIBLE) * BM_VISIBLE;
+  int y = MARGIN_Y + CHAR_H + 6;
+  for (int i = windowStart; i < min(windowStart + BM_VISIBLE, totalItems); i++) {
+    if (i == bookmarkCount) {
+      drawRow(MARGIN_X, y, "...Return to Menu", i == bmIndex);
+    } else {
+      int bi = bookmarks[i].bookIdx;
+      int pg = bookmarks[i].page;
+      String title = (bi >= 0 && bi < bookCount) ? books[bi].title.substring(0, 22) : "?";
+      char label[48]; sprintf(label, "%s p.%d", title.c_str(), pg + 1);
+      drawRow(MARGIN_X, y, String(label), i == bmIndex);
+    }
+    y += CHAR_H + 2;
+  }
+  if (totalItems > BM_VISIBLE) {
+    char pos[10]; sprintf(pos, "%d/%d", bmIndex + 1, totalItems);
+    display.setCursor(SCREEN_H - strlen(pos) * CHAR_W - MARGIN_X, MARGIN_Y);
+    display.print(pos);
+  }
+  doUpdate(full);
+}
+
+// ─── SETTINGS ────────────────────────────────────────────────────────────────
+void drawSettings(bool full) {
+  display.clearMemory();
+  display.setTextSize(1);
+  display.setTextColor(BLACK);
+  drawCenteredTitle("Settings");
+
+  int y = MARGIN_Y + CHAR_H + 6;
+  for (int i = 0; i < SETTINGS_COUNT; i++) {
+    String label;
+    if (i == 0) label = bleEnabled ? "Bluetooth: ON" : "Bluetooth: OFF";
+    else        label = SETTINGS_ITEMS[i];
+    drawRow(MARGIN_X, y, label, i == settingsIndex);
+    y += CHAR_H + 4;
+  }
+  doUpdate(full);
+}
+
+// ─── SETTINGS: DELETE A BOOK ─────────────────────────────────────────────────
+void drawSettingsDeleteBook(bool full) {
+  display.clearMemory();
+  display.setTextSize(1);
+  display.setTextColor(BLACK);
+  drawCenteredTitle("Delete Book");
+
+  int windowStart = (deleteBookIndex / LIB_VISIBLE) * LIB_VISIBLE;
+  int y = MARGIN_Y + CHAR_H + 6;
+  for (int i = windowStart; i < min(windowStart + LIB_VISIBLE, bookCount); i++) {
+    drawRow(MARGIN_X, y, books[i].title.substring(0, CHARS_PER_LINE - 4), i == deleteBookIndex);
+    y += CHAR_H + 2;
+  }
+  if (bookCount > LIB_VISIBLE) {
+    char pos[10]; sprintf(pos, "%d/%d", deleteBookIndex + 1, bookCount);
+    display.setCursor(SCREEN_H - strlen(pos) * CHAR_W - MARGIN_X, MARGIN_Y);
+    display.print(pos);
+  }
+  display.setCursor(MARGIN_X, SCREEN_W - CHAR_H - 2);
+  display.print("hold=confirm delete  2x=cancel");
+  doUpdate(full);
+}
+
+// ─── INFO ────────────────────────────────────────────────────────────────────
+static const char* INFO_LINES[] = {
+  "NAVIGATION"
+  "1 Button Press = Page Forward / Down"
+  "2 Button Presses = Page Back / Up"
+  "Long Press = Select"
+  "Extra Long Press (3 seconds) = Back to menu OR Power Off"
+  "                       "
+  "ADDING BOOKS"
+  "Books can be added and removed via Bluetooth at:"
+  "|https://samuelsowanick.github.io/mini-ink-book-connect/|"
+  "                       "
+  "Bluetooth must be enabled under 'Settings > Bluetooth'"
+};
+static const int INFO_LINE_COUNT_CHECK = 30; // matches #define INFO_LINE_COUNT above
+
+void drawInfo() {
+  display.clearMemory();
+  display.setFont(nullptr);
+  display.setTextSize(1);
+  display.setTextColor(BLACK);
+  drawCenteredTitle("Button Guide");
+
+  int visibleLines = (SCREEN_W - MARGIN_Y*2 - CHAR_H - 8) / (CHAR_H + 1);
+  int y = MARGIN_Y + CHAR_H + 6;
+  for (int i = infoScrollOffset; i < INFO_LINE_COUNT && i < infoScrollOffset + visibleLines; i++) {
+    display.setCursor(MARGIN_X, y);
+    display.print(INFO_LINES[i]);
+    y += CHAR_H + 1;
+  }
+  // Scroll indicator
+  if (INFO_LINE_COUNT > visibleLines) {
+    char pos[12]; sprintf(pos, "%d/%d", infoScrollOffset + 1, INFO_LINE_COUNT - visibleLines + 1);
+    display.setCursor(SCREEN_H - strlen(pos)*CHAR_W - MARGIN_X, MARGIN_Y);
+    display.print(pos);
+  }
+  doUpdate(true);
+}
+
+// ─── MESSAGE ─────────────────────────────────────────────────────────────────
+void drawMessage(const char* title, const char* body) {
+  display.clearMemory();
+  display.setTextSize(1);
+  display.setTextColor(BLACK);
+  drawCenteredTitle(title);
+  display.setCursor(MARGIN_X, MARGIN_Y + CHAR_H + 6);
+  display.print(body);
+  doUpdate(true);
+}
+
+// ============================================================
+//  PAGE INDEX BUILDER
+//  Uses READ_CHARS_PER_LINE / READ_LINES_PER_PAGE since the
+//  reading view uses textSize 2.
+// ============================================================
+void buildPageIndex(int bookIdx) {
+  totalPages   = 0;
+  chapterCount = 0;
+  if (bookIdx < 0 || bookIdx >= bookCount) return;
+
+  String path = String(BOOKS_DIR) + "/" + books[bookIdx].filename;
+  File f = LittleFS.open(path, "r");
+  if (!f) return;
+
+  pageOffsets[0] = 0;
+  totalPages     = 1;
+
+  int    lineCount = 0, lineChars = 0;
+  String lineBuf   = "";
+
+  while (f.available() && totalPages < MAX_PAGES) {
+    char ch = f.read();
+
+    if (ch == '\n') {
+      String trimmed = lineBuf;
+      trimmed.trim();
+      if (trimmed.startsWith("===") && trimmed.endsWith("===") && trimmed.length() > 6) {
+        String name = trimmed.substring(3, trimmed.length() - 3);
+        name.trim();
+        if (name.length() > 0 && chapterCount < MAX_CHAPTERS)
+          chapters[chapterCount++] = { name, totalPages - 1 };
+      }
+      lineBuf   = "";
+    } else {
+      lineBuf += ch;
+    }
+
+    // Page-break accounting using READING font dimensions
+    if (ch == '\n') {
+      lineChars = 0;
+      lineCount++;
+    } else {
+      lineChars++;
+      if (lineChars >= READ_CHARS_PER_LINE) {
+        lineChars = 0;
+        lineCount++;
+      }
+    }
+    if (lineCount >= READ_LINES_PER_PAGE) {
+      pageOffsets[totalPages++] = f.position();
+      lineCount = lineChars = 0;
+      yield(); // feed watchdog during long index builds
+    }
+  }
+
+  f.close();
+  books[bookIdx].totalPages = totalPages;
+  saveMeta();
+}
+
+String getPageText(int bookIdx, int page) {
+  if (bookIdx < 0 || page >= totalPages) return "";
+  String path = String(BOOKS_DIR) + "/" + books[bookIdx].filename;
+  File f = LittleFS.open(path, "r");
+  if (!f) return "";
+  f.seek(pageOffsets[page]);
+  // Read enough for one reading-font page with a small buffer
+  const int readAhead = READ_CHARS_PER_LINE * (READ_LINES_PER_PAGE + 4);
+  String text = ""; text.reserve(readAhead);
+  int count = 0;
+  while (f.available() && count++ < readAhead) text += (char)f.read();
+  f.close();
+  return text;
+}
+
+// ============================================================
+//  UPLOAD PROCESSING
+// ============================================================
+void processUploadBuffer() {
+  uploadActive = false;
+  if (!uploadName.length() || !uploadBuffer.length()) return;
+
+  String safeName = uploadName;
+  for (int i = 0; i < (int)safeName.length(); i++) {
+    char c = safeName[i];
+    if (!isAlphaNumeric(c) && c != '.' && c != '-' && c != '_') safeName[i] = '_';
+  }
+
+  File f = LittleFS.open(String(BOOKS_DIR) + "/" + safeName, "w");
+  if (!f) return;
+  f.print(uploadBuffer); f.close();
+
+  String title = safeName;
+  int dot = title.lastIndexOf('.');
+  if (dot > 0) title = title.substring(0, dot);
+  title.replace("_", " ");
+
+  bool found = false;
+  for (int i = 0; i < bookCount; i++) {
+    if (books[i].filename == safeName) { books[i].totalPages = 0; books[i].lastPage = 0; found = true; break; }
+  }
+  if (!found && bookCount < MAX_BOOKS) books[bookCount++] = { title, safeName, 0, 0 };
+
+  saveMeta();
+  uploadBuffer = ""; uploadName = "";
+  drawMessage("Book received!", title.c_str());
+  delay(2000);
+  if (appState == STATE_MENU) drawMenu();
+}
+
+// ============================================================
+//  META PERSISTENCE
+// ============================================================
+void loadMeta() {
+  bookCount = 0; bookmarkCount = 0;
+  if (!LittleFS.exists(META_FILE)) return;
+  File f = LittleFS.open(META_FILE, "r");
+  if (!f) return;
+  JsonDocument doc;
+  if (deserializeJson(doc, f) != DeserializationError::Ok) { f.close(); return; }
+  f.close();
+
+  currentBook = doc["currentBook"] | -1;
+  currentPage = doc["currentPage"] | 0;
+
+  for (JsonObject obj : doc["books"].as<JsonArray>()) {
+    if (bookCount >= MAX_BOOKS) break;
+    books[bookCount++] = {
+      obj["title"].as<String>(), obj["file"].as<String>(),
+      obj["pages"] | 0, obj["last"] | 0
+    };
+  }
+  for (JsonObject obj : doc["bookmarks"].as<JsonArray>()) {
+    if (bookmarkCount >= MAX_BOOKMARKS) break;
+    bookmarks[bookmarkCount++] = { obj["book"] | 0, obj["page"] | 0 };
+  }
+}
+
+void saveMeta() {
+  JsonDocument doc;
+  doc["currentBook"] = currentBook;
+  doc["currentPage"] = currentPage;
+
+  JsonArray arr = doc["books"].to<JsonArray>();
+  for (int i = 0; i < bookCount; i++) {
+    JsonObject o = arr.add<JsonObject>();
+    o["title"] = books[i].title; o["file"]  = books[i].filename;
+    o["pages"] = books[i].totalPages; o["last"] = books[i].lastPage;
+  }
+  JsonArray bma = doc["bookmarks"].to<JsonArray>();
+  for (int i = 0; i < bookmarkCount; i++) {
+    JsonObject o = bma.add<JsonObject>();
+    o["book"] = bookmarks[i].bookIdx; o["page"] = bookmarks[i].page;
+  }
+  File f = LittleFS.open(META_FILE, "w");
+  if (f) { serializeJson(doc, f); f.close(); }
+}
+
+// ============================================================
+//  BLE
+// ============================================================
+void startBLE() {
+  if (bleServerRunning) return;
+  BLEDevice::init("MiniInkBook");
+  pServer = BLEDevice::createServer();
+  pServer->setCallbacks(new ServerCallbacks());
+  BLEService* svc = pServer->createService(SERVICE_UUID);
+  pUploadChar = svc->createCharacteristic(UPLOAD_CHAR_UUID,
+    BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_WRITE_NR);
+  pUploadChar->setCallbacks(new UploadCallback());
+  pListChar = svc->createCharacteristic(LIST_CHAR_UUID, BLECharacteristic::PROPERTY_READ);
+  pListChar->setCallbacks(new ListCallback());
+  pDeleteChar = svc->createCharacteristic(DELETE_CHAR_UUID, BLECharacteristic::PROPERTY_WRITE);
+  pDeleteChar->setCallbacks(new DeleteCallback());
+  svc->start();
+  BLEAdvertising* adv = BLEDevice::getAdvertising();
+  adv->addServiceUUID(SERVICE_UUID); adv->setScanResponse(true);
+  BLEDevice::startAdvertising();
+  bleServerRunning = true;
+}
+
+void stopBLE() {
+  if (!bleServerRunning) return;
+  BLEDevice::stopAdvertising();
+  if (pServer && pServer->getConnectedCount() > 0) pServer->disconnect(0);
+  BLEDevice::deinit(true);
+  bleServerRunning = false; pServer = nullptr;
+}
+
+// ============================================================
+//  SLEEP QUOTE  (full refresh before deep sleep)
+// ============================================================
+void drawSleepQuote() {
+static const char* quotes[] = {
+  "A reader lives a thousand lives before he dies. -- George R.R. Martin",
+  "Not all readers are leaders, but all leaders are readers. -- Harry S. Truman",
+  "Reading is to the mind what exercise is to the body. -- Joseph Addison",
+  "The more that you read, the more things you will know. -- Dr. Seuss",
+  "I do believe something very magical can happen when you read a good book. -- J.K. Rowling",
+  "Reading is a discount ticket to everywhere. -- Mary Schmich",
+  "Reading gives us someplace to go when we have to stay where we are. -- Mason Cooley",
+  "Once you learn to read, you will be forever free. -- Frederick Douglass",
+  "There is no friend as loyal as a book. -- Ernest Hemingway",
+  "A book is a dream that you hold in your hands. -- Neil Gaiman",
+  "Books are the mirrors of the soul. -- Virginia Woolf",
+  "A good book has no ending. -- R.D. Cumming",
+  "Books are a uniquely portable magic. -- Stephen King",
+  "A book is a gift you can open again and again. -- Garrison Keillor",
+  "Books are the quietest and most constant of friends. -- Charles W. Eliot",
+  "A room without books is like a body without a soul. -- Marcus Tullius Cicero",
+  "Books are lighthouses erected in the great sea of time. -- E.P. Whipple",
+  "The books that the world calls immoral are books that show the world its own shame. -- Oscar Wilde",
+  "A book must be the axe for the frozen sea within us. -- Franz Kafka",
+  "Good friends, good books, and a sleepy conscience: this is the ideal life. -- Mark Twain",
+  "Outside of a dog, a book is man's best friend. Inside of a dog, it's too dark to read. -- Groucho Marx",
+  "A book lying idle on a shelf is wasted ammunition. -- Henry Miller",
+  "A library is not a luxury but one of the necessities of life. -- Henry Ward Beecher",
+  "Google can bring you back 100,000 answers. A librarian can bring you back the right one. -- Neil Gaiman",
+  "Libraries are the thin red line between civilization and barbarism. -- Neil Gaiman",
+  "A library is the delivery room for the birth of ideas. -- Norman Cousins",
+  "The library is the temple of learning, and learning has liberated more people than all the wars in history. -- Carl T. Rowan",
+  "Libraries store the energy that fuels the imagination. -- Sidney Sheldon",
+  "A great library contains the diary of the human race. -- George Mercer Dawson",
+  "The only thing that you absolutely have to know is the location of the library. -- Albert Einstein",
+  "I have always imagined that Paradise will be a kind of library. -- Jorge Luis Borges",
+  "My alma mater was books, a good library. -- Malcolm X",
+  "Reading is the sole means by which we slip, involuntarily, often helplessly, into another's skin. -- Joyce Carol Oates",
+  "That's the thing about books. They let you travel without moving your feet. -- Jhumpa Lahiri",
+  "Books were my pass to personal freedom. -- Oprah Winfrey",
+  "Fiction reveals truth that reality obscures. -- Ralph Waldo Emerson",
+  "The book you don't read won't help. -- Jim Rohn",
+  "I am not a speed reader. I am a speed understander. -- Isaac Asimov",
+  "To read without reflecting is like eating without digesting. -- Edmund Burke",
+  "Reading makes a full man; conference a ready man; and writing an exact man. -- Francis Bacon",
+  "Show me a family of readers and I will show you the people who move the world. -- Napoleon Bonaparte",
+  "In books I have traveled, not only to other worlds, but into my own. -- Anna Quindlen",
+  "Books are the carriers of civilization. -- Barbara Tuchman",
+  "Read a thousand books, and your words will flow like a river. -- Lisa See",
+  "The reading of all good books is like conversation with the finest men of past centuries. -- Rene Descartes",
+  "If there's a book that you want to read, but it hasn't been written yet, then you must write it. -- Toni Morrison",
+  "There is no greater agony than bearing an untold story inside you. -- Maya Angelou",
+  "A writer only begins a book. A reader finishes it. -- Samuel Johnson",
+  "Every book you pick up has its own lesson or lessons. -- Stephen King",
+  "The purpose of a writer is to keep civilization from destroying itself. -- Albert Camus",
+  "Literature is a way of noticing the existence of other people. -- George Saunders",
+  "A writer is a reader moved to emulation. -- Saul Bellow",
+  "Literacy is a bridge from misery to hope. -- Kofi Annan",
+  "One child, one teacher, one book, one pen can change the world. -- Malala Yousafzai",
+  "The man who does not read good books has no advantage over the man who cannot read them. -- Mark Twain",
+  "Literacy is not a luxury; it is a right and a responsibility. -- Hillary Clinton",
+  "The more I read, the more I acquire, the more certain I am that I know nothing. -- Voltaire",
+  "Children are made readers on the laps of their parents. -- Emilie Buchwald",
+  "Librarians save lives: by handing the right book, at the right time, to a kid in need. -- Neil Gaiman",
+  "To read is to voyage through time. -- Carl Sagan",
+  "Until I feared I would lose it, I never loved to read. One does not love breathing. -- Harper Lee",
+  "I kept always two books in my pocket: one to read, one to write in. -- Robert Louis Stevenson",
+  "There is no such thing as a child who hates to read; there are only children who have not found the right book. -- Frank Serafini",
+  "Literature is the art of discovering something extraordinary about ordinary people. -- Boris Pasternak",
+  "Books are not made for furniture, but there is nothing else that so beautifully furnishes a house. -- Henry Ward Beecher",
+  "Without words, without writing, and without books there would be no history, there could be no concept of humanity. -- Hermann Hesse",
+  "Books are the plane, and the train, and the road. They are the destination, and the journey. -- Anna Quindlen",
+  "In the library, I felt better, words you could trust and look at till you understood them. -- Jeanette Winterson",
+  "Literature is the most agreeable way of ignoring life. -- Fernando Pessoa",
+  "Stories are a communal currency of humanity. -- Tahir Shah",
+  "That is part of the beauty of all literature. You discover that your longings are universal longings. -- F. Scott Fitzgerald",
+  "We are all stories in the end. -- Steven Moffat",
+  "A story has no beginning or end; arbitrarily one chooses that moment of experience from which to look back. -- Graham Greene",
+  "All great literature is one of two stories: a man goes on a journey, or a stranger comes to town. -- Leo Tolstoy",
+  "Literature is not only a mirror; it is also a map. -- Margaret Atwood",
+  "Books let us into their souls and lay open to us the secrets of our own. -- William Hazlitt",
+  "To add a library to a house is to give that house a soul. -- Cicero",
+  "What a school thinks about its library is a measure of what it feels about education. -- Harold Howe",
+  "Libraries allow children to ask questions about the world and find the answers. -- Julius Lester",
+  "A book is a loaded gun in the house next door. -- Ray Bradbury",
+  "Education is the most powerful weapon which you can use to change the world. -- Nelson Mandela",
+  "The more you read, the more you know. The more you know, the smarter you grow. -- Robert Kiyosaki",
+  "Books are the bees which carry the quickening pollen from one to another mind. -- James Russell Lowell",
+  "Reading is an act of civilization; it is one of the greatest acts of civilization. -- Milton Glaser",
+  "Think before you speak. Read before you think. -- Fran Lebowitz",
+  "Today a reader, tomorrow a leader. -- Margaret Fuller",
+  "I've been drunk for about a week now, and I thought it might sober me up to sit in a library. -- F. Scott Fitzgerald",
+  "Libraries are the wardrobes of literature, whence men may bring forth something for ornament, much for curiosity, and more for use. -- Dion Boucicault",
+  "Reading is the key that opens doors to many good things in life. -- Rupert Evans"
+};
+  
+  const int quoteCount = 10;
+  int idx = (esp_random() % quoteCount);
+
+  display.fastmodeOff();
+  display.clearMemory();
+  display.setFont(nullptr);
+  display.setTextSize(1);
+  display.setTextColor(BLACK);
+
+  // Build quoted string
+  String quoted = String("\"") + quotes[idx] + "\"";
+
+  // Word-wrap the quote
+  String lines[14];
+  int lc = wrapText(quoted, lines, 14, CHARS_PER_LINE);
+
+  // Center the block vertically
+  int blockH = lc * (CHAR_H + 2);
+  int y = (SCREEN_W - blockH) / 2;
+  if (y < MARGIN_Y) y = MARGIN_Y;
+
+  for (int i = 0; i < lc; i++) {
+    // Center each line horizontally
+    int lineLen = lines[i].length();
+    int x = (SCREEN_H - lineLen * CHAR_W) / 2;
+    if (x < MARGIN_X) x = MARGIN_X;
+    display.setCursor(x, y);
+    display.print(lines[i]);
+    y += CHAR_H + 2;
+  }
+  display.update();
+}
+
+// ============================================================
+//  DEEP SLEEP
+// ============================================================
+void goToSleep() {
+  if (bleServerRunning) stopBLE();
+  esp_deep_sleep_start();
+}
