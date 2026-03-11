@@ -426,8 +426,27 @@ void handleMenuInput(BtnEvent e) {
   if (e == BTN_LONG) {
     switch (menuIndex) {
       case 0: // Continue Reading
-        if (currentBook >= 0) { appState = STATE_READING; drawPage(currentPage, true); }
-        else { drawMessage("No book open", "Open Library to\npick a book."); delay(1500); drawMenu(true); }
+        // FIX 3: Rebuild page index before continuing so pageOffsets[] is
+        // always valid — loadMeta() restores currentBook/currentPage but
+        // does not populate the in-RAM page index, causing out-of-bounds
+        // reads (and a crash) if we skip buildPageIndex() here.
+        if (currentBook >= 0) {
+          buildPageIndex(currentBook);
+          if (totalPages == 0) {
+            drawMessage("Error", "Could not load book.");
+            delay(1500);
+            drawMenu(true);
+            break;
+          }
+          // Clamp page in case the book was re-uploaded at a different length
+          if (currentPage >= totalPages) currentPage = 0;
+          appState = STATE_READING;
+          drawPage(currentPage, true);
+        } else {
+          drawMessage("No book open", "Open Library to\npick a book.");
+          delay(1500);
+          drawMenu(true);
+        }
         break;
       case 1: libIndex = 0; appState = STATE_LIBRARY;   drawLibrary(true);   break;
       case 2: bmIndex  = 0; appState = STATE_BOOKMARKS; drawBookmarks(true); break;
@@ -510,6 +529,10 @@ void handleOverlayInput(BtnEvent e) {
         drawMenu(true);
         break;
       case 4: // Back to book
+        // FIX 1 & 2: appState was never set here, so the device stayed in
+        // STATE_OVERLAY after drawPage() returned. This caused the overlay
+        // to reappear on the next button press AND made "Continue Reading"
+        // from the main menu re-enter the overlay instead of the book.
         appState = STATE_READING;
         drawPage(currentPage, true);
         break;
