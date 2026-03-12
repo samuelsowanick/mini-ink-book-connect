@@ -832,16 +832,20 @@ async function ensureConnected() {
 document.getElementById('uploadBtn').onclick = async () => {
     if (!cleanText) { log('No EPUB loaded.', 'warn'); return; }
     if (!await ensureConnected()) return;
+
+    const wrap = document.getElementById('progressWrap');
+    const prog = document.getElementById('progressBar');
+    const pct  = document.getElementById('progressPct');
+    const uploadBtn = document.getElementById('uploadBtn');
+    uploadBtn.disabled = true;
+    wrap.style.display = 'block';
+    prog.value = 0;
+
     try {
         const service = await bleServer.getPrimaryService(SERVICE_UUID);
         const char    = await service.getCharacteristic(UPLOAD_CHAR_UUID);
 
         setStatus('Uploading...', 'busy');
-        const wrap = document.getElementById('progressWrap');
-        const prog = document.getElementById('progressBar');
-        const pct  = document.getElementById('progressPct');
-        wrap.style.display = 'block';
-        prog.value = 0;
 
         const encoder  = new TextEncoder();
         const prefix   = encoder.encode(fileName + "|");
@@ -851,21 +855,42 @@ document.getElementById('uploadBtn').onclick = async () => {
         combined.set(body, prefix.length);
 
         const total = combined.length;
+        log(`Sending ${(total/1024).toFixed(1)} KB in ${Math.ceil(total/CHUNK_SIZE)} chunks...`);
+
+        // BLE writeValue resolves when the packet is *accepted by the local BLE
+        // stack*, not when the remote device has processed it. Sending back-to-back
+        // without pausing overwhelms the Arduino's receive buffer and drops chunks.
+        // A 20ms gap between every chunk is safe for ESP32 BLE at 512-byte MTU.
+        const INTER_CHUNK_MS = 20;
+
         for (let i = 0; i < total; i += CHUNK_SIZE) {
+            // Abort if device disconnected mid-transfer
+            if (!bleDevice?.gatt?.connected) {
+                throw new Error('Device disconnected during upload');
+            }
+
             const chunk = combined.slice(i, i + CHUNK_SIZE);
             await char.writeValue(chunk);
+
             const p = Math.round(((i + chunk.length) / total) * 100);
-            prog.value = p; pct.textContent = p + '%';
-            if (i % (CHUNK_SIZE * 20) === 0) await new Promise(r => setTimeout(r, 10));
+            prog.value = p;
+            pct.textContent = p + '%';
+
+            // Pace every chunk — give the Arduino time to append to its buffer
+            await new Promise(r => setTimeout(r, INTER_CHUNK_MS));
         }
 
         setStatus('Transfer complete', 'ok');
         log(`Sent "${fileName}" (${(total/1024).toFixed(1)} KB)`, 'ok');
-        prog.value = 100; pct.textContent = '100%';
+        prog.value = 100;
+        pct.textContent = '100%';
         setTimeout(() => { wrap.style.display = 'none'; }, 3000);
     } catch (err) {
         log(`Upload failed: ${err.message}`, 'err');
         setStatus('Upload failed', 'error');
+        wrap.style.display = 'none';
+    } finally {
+        uploadBtn.disabled = false;
     }
 };
 
