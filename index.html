@@ -391,10 +391,9 @@ const DELETE_CHAR_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26aa";
 const CHUNK_SIZE       = 512;
 
 // ── Chapter marker format ──────────────────────────────────────────────────
-// Must match exactly what your Arduino firmware scans for.
-// Format: \n===CHAPTER: Title===\n
-// The Arduino should search for lines beginning with "===CHAPTER:"
-const CHAPTER_PREFIX = "===CHAPTER:";
+// Format: \n=== Title ===\n
+// Arduino detects lines that start AND end with === and extracts the title.
+const CHAPTER_PREFIX = "===";
 const CHAPTER_SUFFIX = "===";
 
 let cleanText = "";
@@ -507,12 +506,12 @@ function toAscii(str) {
 }
 
 // ── Build a chapter marker line (pure ASCII, no sanitisation needed) ───────
-// Produces exactly: \n===CHAPTER: Title===\n
+// Produces exactly: \n=== Title ===\n
 // Title is sanitised to ASCII before embedding so the marker line stays clean.
 function makeChapterMarker(title) {
     // Sanitise the title itself, then strip any stray = or | that could confuse the parser
     const safeTitle = toAscii(title).replace(/[=|]/g, '-').replace(/[ \t]+/g, ' ').trim();
-    return `\n${CHAPTER_PREFIX} ${safeTitle}${CHAPTER_SUFFIX}\n`;
+    return `\n${CHAPTER_PREFIX} ${safeTitle} ${CHAPTER_SUFFIX}\n`;
 }
 
 // ── EPUB Parsing ───────────────────────────────────────────────────────────
@@ -736,7 +735,7 @@ document.getElementById('fileInput').onchange = async (e) => {
         const assembled = parts.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 
         // ── 10. Sanity-check: count actual markers in final output ─────────
-        const markerMatches = (assembled.match(new RegExp(`\\${CHAPTER_PREFIX.replace(/=/g,'\\=')}`, 'g')) || []).length;
+        const markerMatches = (assembled.match(/===[^=][^=\n]+===/g) || []).length;
         const chapterCount  = labelledChapters > 0 ? labelledChapters
             : headingChapters > 0 ? headingChapters
             : docsWithText;
@@ -752,7 +751,7 @@ document.getElementById('fileInput').onchange = async (e) => {
         cleanText = assembled;
 
         // Debug: log first marker found so you can verify format
-        const firstMarker = assembled.match(/===CHAPTER:[^\n]*/);
+        const firstMarker = assembled.match(/===[^\n]*/);
         if (firstMarker) log(`First marker: "${firstMarker[0]}"`, 'ok');
         else log('WARNING: No chapter markers found in output!', 'warn');
 
