@@ -390,6 +390,13 @@ const LIST_CHAR_UUID   = "beb5483e-36e1-4688-b7f5-ea07361b26a9";
 const DELETE_CHAR_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26aa";
 const CHUNK_SIZE       = 512;
 
+// ── Chapter marker format ──────────────────────────────────────────────────
+// Must match exactly what your Arduino firmware scans for.
+// Format: \n===CHAPTER: Title===\n
+// The Arduino should search for lines beginning with "===CHAPTER:"
+const CHAPTER_PREFIX = "===CHAPTER:";
+const CHAPTER_SUFFIX = "===";
+
 let cleanText = "";
 let fileName  = "";
 let bleDevice = null;
@@ -422,30 +429,20 @@ function setConnected(connected) {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-/**
- * Resolve a path that may contain ../ segments and normalise it.
- */
 function resolvePath(base, href) {
     if (!href) return '';
     href = href.split('#')[0];
     if (!href) return '';
-    // If href is absolute (starts with /) strip leading slash and use as-is
     if (href.startsWith('/')) return href.slice(1);
     const parts = (base + href).split('/');
     const resolved = [];
     for (const part of parts) {
-        if (part === '..') {
-            resolved.pop();
-        } else if (part !== '.') {
-            resolved.push(part);
-        }
+        if (part === '..') resolved.pop();
+        else if (part !== '.') resolved.push(part);
     }
     return resolved.join('/');
 }
 
-/**
- * Look up a file in the zip by path, trying several normalisations.
- */
 function zipEntry(zip, path) {
     if (!path) return null;
     if (zip.files[path]) return zip.files[path];
@@ -454,16 +451,12 @@ function zipEntry(zip, path) {
     const lower = path.toLowerCase();
     const lowerDecoded = decoded.toLowerCase();
     for (const key of Object.keys(zip.files)) {
-        if (key.toLowerCase() === lower || key.toLowerCase() === lowerDecoded) {
+        if (key.toLowerCase() === lower || key.toLowerCase() === lowerDecoded)
             return zip.files[key];
-        }
     }
     return null;
 }
 
-/**
- * Extract text from a Dublin Core metadata element robustly.
- */
 function getDCMeta(opfDoc, localName) {
     const selectors = [`dc\\:${localName}`, `${localName}`, `*|${localName}`];
     for (const sel of selectors) {
@@ -481,14 +474,45 @@ function getDCMeta(opfDoc, localName) {
     return '';
 }
 
-/**
- * Get the directory portion of a path (with trailing slash).
- * e.g. 'OEBPS/content/chapter1.xhtml' => 'OEBPS/content/'
- *      'book.opf' => ''
- */
 function dirOf(path) {
     if (!path || !path.includes('/')) return '';
     return path.substring(0, path.lastIndexOf('/') + 1);
+}
+
+// ── Sanitise a string to plain ASCII ──────────────────────────────────────
+// Call this on CONTENT TEXT ONLY — never on chapter markers.
+function toAscii(str) {
+    return str
+        .replace(/[\u2018\u2019\u201A\u201B\u2032\u2035]/g, "'")
+        .replace(/[\u201C\u201D\u201E\u201F\u2033\u2036]/g, '"')
+        .replace(/[\u2013\u2014\u2015]/g, '--').replace(/\u2012/g, '-')
+        .replace(/\u2026/g, '...')
+        .replace(/[\u00A0\u202F\u2007\u2009\u200A]/g, ' ')
+        .replace(/[\u2022\u2023\u2043\u204C\u204D]/g, '*')
+        .replace(/\u2044/g, '/').replace(/[\u2039\u203A]/g, m => m === '\u2039' ? '<' : '>')
+        .replace(/\uFB00/g,'ff').replace(/\uFB01/g,'fi').replace(/\uFB02/g,'fl')
+        .replace(/\uFB03/g,'ffi').replace(/\uFB04/g,'ffl')
+        .replace(/[àáâãäåāăą]/g,'a').replace(/[ÀÁÂÃÄÅĀĂĄ]/g,'A')
+        .replace(/[èéêëēĕęě]/g,'e').replace(/[ÈÉÊËĒĔĘĚ]/g,'E')
+        .replace(/[ìíîïīĭįı]/g,'i').replace(/[ÌÍÎÏĪĬĮ]/g,'I')
+        .replace(/[òóôõöøōŏő]/g,'o').replace(/[ÒÓÔÕÖØŌŎŐ]/g,'O')
+        .replace(/[ùúûüūŭůű]/g,'u').replace(/[ÙÚÛÜŪŬŮŰ]/g,'U')
+        .replace(/[ýÿ]/g,'y').replace(/[ÝŸ]/g,'Y').replace(/[ñ]/g,'n').replace(/[Ñ]/g,'N')
+        .replace(/[çćĉċč]/g,'c').replace(/[ÇĆĈĊČ]/g,'C')
+        .replace(/[ß]/g,'ss').replace(/[æ]/g,'ae').replace(/[Æ]/g,'AE')
+        .replace(/[œ]/g,'oe').replace(/[Œ]/g,'OE')
+        .replace(/[ð]/g,'d').replace(/[Ð]/g,'D').replace(/[þ]/g,'th').replace(/[Þ]/g,'Th')
+        .replace(/[\u200B\u200C\u200D\uFEFF]/g,'')
+        .replace(/[^\x09\x0A\x20-\x7E]/g,'');
+}
+
+// ── Build a chapter marker line (pure ASCII, no sanitisation needed) ───────
+// Produces exactly: \n===CHAPTER: Title===\n
+// Title is sanitised to ASCII before embedding so the marker line stays clean.
+function makeChapterMarker(title) {
+    // Sanitise the title itself, then strip any stray = or | that could confuse the parser
+    const safeTitle = toAscii(title).replace(/[=|]/g, '-').replace(/[ \t]+/g, ' ').trim();
+    return `\n${CHAPTER_PREFIX} ${safeTitle}${CHAPTER_SUFFIX}\n`;
 }
 
 // ── EPUB Parsing ───────────────────────────────────────────────────────────
@@ -507,7 +531,7 @@ document.getElementById('fileInput').onchange = async (e) => {
     try {
         const zip = await JSZip.loadAsync(file);
 
-        // ── 1. Find OPF path from container.xml ──────────────────────────
+        // ── 1. Find OPF path ──────────────────────────────────────────────
         let opfPath = null;
         const containerEntry = zipEntry(zip, 'META-INF/container.xml');
         if (containerEntry) {
@@ -516,13 +540,10 @@ document.getElementById('fileInput').onchange = async (e) => {
             const rootfile = containerDoc.querySelector("rootfile");
             if (rootfile) opfPath = rootfile.getAttribute("full-path");
         }
-        if (!opfPath) {
+        if (!opfPath)
             opfPath = Object.keys(zip.files).find(n => n.endsWith('.opf')) || null;
-        }
 
-        // Base directory is the folder containing the OPF file
         const base = dirOf(opfPath);
-
         log(`OPF: ${opfPath || 'not found'}, base: "${base}"`);
 
         let bookTitle  = file.name.replace(/\.epub$/i, '');
@@ -532,7 +553,6 @@ document.getElementById('fileInput').onchange = async (e) => {
         if (opfPath) {
             const opfEntry = zipEntry(zip, opfPath);
             if (!opfEntry) throw new Error(`OPF file not found in zip: ${opfPath}`);
-
             const opfXml = await opfEntry.async("string");
             const opfDoc = new DOMParser().parseFromString(opfXml, "text/xml");
 
@@ -542,60 +562,43 @@ document.getElementById('fileInput').onchange = async (e) => {
             const c = getDCMeta(opfDoc, 'creator');
             if (c) bookAuthor = c;
 
-            // ── 3. Build manifest id→path map ─────────────────────────────
-            const manifestById   = {}; // id  → absolute zip path
-            const manifestByPath = {}; // normalised absolute zip path → id
-
+            // ── 3. Manifest ───────────────────────────────────────────────
+            const manifestById = {};
             opfDoc.querySelectorAll("manifest item").forEach(el => {
                 const id   = el.getAttribute("id");
                 const href = el.getAttribute("href");
-                if (!id || !href) return;
-                const absPath = resolvePath(base, href);
-                manifestById[id]       = absPath;
-                manifestByPath[absPath] = id;
+                if (id && href) manifestById[id] = resolvePath(base, href);
             });
-
             log(`Manifest: ${Object.keys(manifestById).length} items`);
 
-            // ── 4. Chapter labels from NCX ────────────────────────────────
-            // Keys are absolute zip paths (without fragment)
-            const ncxLabels = {};
+            // ── 4. NCX chapter labels ─────────────────────────────────────
+            const ncxLabels = {};  // absolute zip path => label string
 
             const spineEl  = opfDoc.querySelector("spine");
             const ncxId    = spineEl?.getAttribute("toc");
-            let ncxAbsPath = ncxId && manifestById[ncxId]
-                ? manifestById[ncxId]
-                : null;
-
-            // Fallback: find any .ncx file in the zip
-            if (!ncxAbsPath) {
+            let ncxAbsPath = (ncxId && manifestById[ncxId]) ? manifestById[ncxId] : null;
+            if (!ncxAbsPath)
                 ncxAbsPath = Object.keys(zip.files).find(n => n.endsWith('.ncx')) || null;
-            }
 
             if (ncxAbsPath) {
                 const ncxEntry = zipEntry(zip, ncxAbsPath);
                 if (ncxEntry) {
                     const ncxXml = await ncxEntry.async("string");
                     const ncxDoc = new DOMParser().parseFromString(ncxXml, "text/xml");
-                    // FIX: NCX paths are relative to the NCX file's own directory
                     const ncxBase = dirOf(ncxAbsPath);
                     ncxDoc.querySelectorAll("navPoint").forEach(np => {
                         const label = np.querySelector("navLabel > text")?.textContent?.trim();
                         const src   = np.querySelector("content")?.getAttribute("src");
                         if (label && src) {
-                            // Resolve relative to NCX directory, not OPF base
-                            const absContentPath = resolvePath(ncxBase, src.split('#')[0]);
-                            // Only store first label per path (top-level chapters)
-                            if (!ncxLabels[absContentPath]) {
-                                ncxLabels[absContentPath] = label;
-                            }
+                            const absPath = resolvePath(ncxBase, src.split('#')[0]);
+                            if (!ncxLabels[absPath]) ncxLabels[absPath] = label;
                         }
                     });
-                    log(`NCX: ${Object.keys(ncxLabels).length} chapter labels (base: "${ncxBase}")`);
+                    log(`NCX: ${Object.keys(ncxLabels).length} labels (base: "${ncxBase}")`);
                 }
             }
 
-            // ── 5. Chapter labels from EPUB3 nav document ─────────────────
+            // ── 5. EPUB3 nav fallback ─────────────────────────────────────
             if (Object.keys(ncxLabels).length === 0) {
                 let navAbsPath = null;
                 opfDoc.querySelectorAll("manifest item").forEach(el => {
@@ -604,36 +607,34 @@ document.getElementById('fileInput').onchange = async (e) => {
                         if (href) navAbsPath = resolvePath(base, href);
                     }
                 });
-                if (!navAbsPath) {
+                if (!navAbsPath)
                     navAbsPath = Object.keys(zip.files).find(n =>
                         (n.endsWith('.xhtml') || n.endsWith('.html')) &&
                         n.toLowerCase().includes('nav')
                     ) || null;
-                }
+
                 if (navAbsPath) {
                     const navEntry = zipEntry(zip, navAbsPath);
                     if (navEntry) {
                         const navHtml = await navEntry.async("string");
                         const navDoc  = new DOMParser().parseFromString(navHtml, 'text/html');
-                        // FIX: resolve nav hrefs relative to the nav file's own directory
                         const navBase = dirOf(navAbsPath);
                         navDoc.querySelectorAll('nav[epub\\:type="toc"] a, nav a').forEach(a => {
                             const label = a.textContent.trim();
                             const href  = a.getAttribute('href');
                             if (label && href) {
-                                const absContentPath = resolvePath(navBase, href.split('#')[0]);
-                                if (!ncxLabels[absContentPath]) ncxLabels[absContentPath] = label;
+                                const absPath = resolvePath(navBase, href.split('#')[0]);
+                                if (!ncxLabels[absPath]) ncxLabels[absPath] = label;
                             }
                         });
-                        log(`NAV: ${Object.keys(ncxLabels).length} chapter labels (base: "${navBase}")`);
+                        log(`NAV: ${Object.keys(ncxLabels).length} labels (base: "${navBase}")`);
                     }
                 }
             }
 
-            // ── 6. Build spine order ──────────────────────────────────────
-            const allSpineItems = [];
-            const linearItems   = [];
-
+            // ── 6. Spine order ────────────────────────────────────────────
+            const allSpineItems    = [];
+            const linearSpineItems = [];
             opfDoc.querySelectorAll("spine itemref").forEach(el => {
                 const idref   = el.getAttribute("idref");
                 const linear  = el.getAttribute("linear");
@@ -641,14 +642,13 @@ document.getElementById('fileInput').onchange = async (e) => {
                 if (!absPath) return;
                 const item = { path: absPath, label: ncxLabels[absPath] || null };
                 allSpineItems.push(item);
-                if (linear !== 'no') linearItems.push(item);
+                if (linear !== 'no') linearSpineItems.push(item);
             });
-
-            spineOrder = linearItems.length > 0 ? linearItems : allSpineItems;
-            log(`Spine: ${spineOrder.length} items (${allSpineItems.length - linearItems.length} non-linear skipped)`);
+            spineOrder = linearSpineItems.length > 0 ? linearSpineItems : allSpineItems;
+            log(`Spine: ${spineOrder.length} items (${allSpineItems.length - linearSpineItems.length} non-linear skipped)`);
         }
 
-        // ── 7. Fallback: use all content files sorted, excluding nav/toc ──
+        // ── 7. Fallback spine ─────────────────────────────────────────────
         if (spineOrder.length === 0) {
             const NON_CONTENT = /\b(nav|toc|cover|copyright|title-page|colophon)\b/i;
             spineOrder = Object.keys(zip.files)
@@ -661,7 +661,7 @@ document.getElementById('fileInput').onchange = async (e) => {
             log(`Fallback spine: ${spineOrder.length} files`, 'warn');
         }
 
-        // ── 8. Extract text from each spine document ──────────────────────
+        // ── 8. Extract plain text from each spine doc ─────────────────────
         const BLOCK_TAGS = new Set([
             'P','DIV','H1','H2','H3','H4','H5','H6',
             'LI','TR','TD','TH','BLOCKQUOTE','PRE',
@@ -675,22 +675,17 @@ document.getElementById('fileInput').onchange = async (e) => {
             const tag = node.tagName?.toUpperCase();
             if (['SCRIPT','STYLE','HEAD','NAV','ASIDE'].includes(tag)) return '';
             let result = '';
-            for (const child of node.childNodes) {
-                result += extractText(child);
-            }
-            if (BLOCK_TAGS.has(tag)) {
-                return '\n' + result.trim() + '\n';
-            }
-            return result;
+            for (const child of node.childNodes) result += extractText(child);
+            return BLOCK_TAGS.has(tag) ? '\n' + result.trim() + '\n' : result;
         }
 
-        let text = "";
-        // FIX: track chapters independently of NCX labels
-        // A "chapter" is either: a labelled spine item, OR a spine doc containing
-        // an h1/h2/h3 heading, OR (last resort) simply each spine document.
-        let labelledChapters = 0; // chapters with NCX/NAV labels
-        let headingChapters  = 0; // unlabelled docs with h1/h2/h3
-        let docsWithText     = 0; // any doc that contributed text
+        // ── KEY FIX: build parts array, sanitise content text separately ──
+        // Chapter markers are kept pristine as ASCII strings and never run
+        // through whitespace-collapsing regexes together with body text.
+        const parts = [];   // alternating: marker string | content string
+        let labelledChapters = 0;
+        let headingChapters  = 0;
+        let docsWithText     = 0;
         let skippedCount     = 0;
 
         for (const { path, label } of spineOrder) {
@@ -700,79 +695,68 @@ document.getElementById('fileInput').onchange = async (e) => {
                 skippedCount++;
                 continue;
             }
-            const html = await entry.async("string");
-            const doc  = new DOMParser().parseFromString(html, 'text/html');
+            const html     = await entry.async("string");
+            const doc      = new DOMParser().parseFromString(html, 'text/html');
             const bodyText = doc.body ? extractText(doc.body).trim() : "";
             if (!bodyText) continue;
-
             docsWithText++;
 
+            // Determine chapter label ──────────────────────────────────────
+            let chapterLabel = null;
             if (label) {
-                // Has an explicit NCX/NAV chapter label
+                // Explicit NCX/NAV label — highest priority
+                chapterLabel = label;
                 labelledChapters++;
-                text += `\n\n=== ${label} ===\n\n`;
             } else {
-                // FIX: try to extract a chapter title from first h1/h2/h3 in the document
+                // Fallback: first h1/h2/h3 heading in the document
                 const heading = doc.body?.querySelector('h1, h2, h3');
                 const headingText = heading?.textContent?.trim();
                 if (headingText) {
+                    chapterLabel = headingText;
                     headingChapters++;
-                    text += `\n\n=== ${headingText} ===\n\n`;
                 }
-                // If no heading either, we still include the text (no chapter marker)
             }
 
-            text += bodyText + "\n\n";
+            // Push chapter marker FIRST, then sanitised content text ───────
+            if (chapterLabel) {
+                // makeChapterMarker returns a clean ASCII string with its own \n padding
+                parts.push(makeChapterMarker(chapterLabel));
+            }
+
+            // Sanitise body text: normalise whitespace, then convert to ASCII
+            const normalised = bodyText
+                .replace(/[ \t]+/g, ' ')
+                .replace(/\n{3,}/g, '\n\n');
+            parts.push(toAscii(normalised));
         }
 
-        // ── 9. Determine chapter count for display ────────────────────────
-        // Prefer NCX/NAV labels; fall back to heading count; fall back to doc count
-        const chapterCount = labelledChapters > 0
-            ? labelledChapters
-            : headingChapters > 0
-                ? headingChapters
-                : docsWithText;
+        // ── 9. Assemble final text ────────────────────────────────────────
+        // Join parts with a single newline. Each chapter marker already has
+        // its own leading/trailing \n, so sections are visually separated.
+        const assembled = parts.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 
-        const chapterSource = labelledChapters > 0
-            ? 'from NCX/NAV'
-            : headingChapters > 0
-                ? 'from headings'
-                : 'spine documents';
+        // ── 10. Sanity-check: count actual markers in final output ─────────
+        const markerMatches = (assembled.match(new RegExp(`\\${CHAPTER_PREFIX.replace(/=/g,'\\=')}`, 'g')) || []).length;
+        const chapterCount  = labelledChapters > 0 ? labelledChapters
+            : headingChapters > 0 ? headingChapters
+            : docsWithText;
+        const chapterSource = labelledChapters > 0 ? 'NCX/NAV'
+            : headingChapters > 0 ? 'headings'
+            : 'spine docs';
 
-        log(`Chapters: ${chapterCount} (${chapterSource}), docs with text: ${docsWithText}`);
-        if (skippedCount > 0) log(`Skipped ${skippedCount} spine items not found in zip`, 'warn');
+        log(`Chapters found: ${chapterCount} (${chapterSource})`);
+        log(`Markers in output: ${markerMatches}`, markerMatches === chapterCount ? 'ok' : 'warn');
+        log(`Docs with text: ${docsWithText}`);
+        if (skippedCount > 0) log(`Skipped ${skippedCount} spine items not in zip`, 'warn');
 
-        // ── 10. Normalise whitespace ──────────────────────────────────────
-        let normalized = text.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+        cleanText = assembled;
 
-        // ── 11. Sanitise to ASCII-safe characters ─────────────────────────
-        cleanText = normalized
-            .replace(/[\u2018\u2019\u201A\u201B\u2032\u2035]/g, "'")
-            .replace(/[\u201C\u201D\u201E\u201F\u2033\u2036]/g, '"')
-            .replace(/[\u2013\u2014\u2015]/g, '--').replace(/\u2012/g, '-')
-            .replace(/\u2026/g, '...')
-            .replace(/[\u00A0\u202F\u2007\u2009\u200A]/g, ' ')
-            .replace(/[\u2022\u2023\u2043\u204C\u204D]/g, '*')
-            .replace(/\u2044/g, '/').replace(/[\u2039\u203A]/g, m => m === '\u2039' ? '<' : '>')
-            .replace(/\uFB00/g,'ff').replace(/\uFB01/g,'fi').replace(/\uFB02/g,'fl')
-            .replace(/\uFB03/g,'ffi').replace(/\uFB04/g,'ffl')
-            .replace(/[àáâãäåāăą]/g,'a').replace(/[ÀÁÂÃÄÅĀĂĄ]/g,'A')
-            .replace(/[èéêëēĕęě]/g,'e').replace(/[ÈÉÊËĒĔĘĚ]/g,'E')
-            .replace(/[ìíîïīĭįı]/g,'i').replace(/[ÌÍÎÏĪĬĮ]/g,'I')
-            .replace(/[òóôõöøōŏő]/g,'o').replace(/[ÒÓÔÕÖØŌŎŐ]/g,'O')
-            .replace(/[ùúûüūŭůű]/g,'u').replace(/[ÙÚÛÜŪŬŮŰ]/g,'U')
-            .replace(/[ýÿ]/g,'y').replace(/[ÝŸ]/g,'Y').replace(/[ñ]/g,'n').replace(/[Ñ]/g,'N')
-            .replace(/[çćĉċč]/g,'c').replace(/[ÇĆĈĊČ]/g,'C')
-            .replace(/[ß]/g,'ss').replace(/[æ]/g,'ae').replace(/[Æ]/g,'AE')
-            .replace(/[œ]/g,'oe').replace(/[Œ]/g,'OE')
-            .replace(/[ð]/g,'d').replace(/[Ð]/g,'D').replace(/[þ]/g,'th').replace(/[Þ]/g,'Th')
-            .replace(/[\u200B\u200C\u200D\uFEFF]/g,'')
-            .replace(/[^\x09\x0A\x20-\x7E]/g,'');
+        // Debug: log first marker found so you can verify format
+        const firstMarker = assembled.match(/===CHAPTER:[^\n]*/);
+        if (firstMarker) log(`First marker: "${firstMarker[0]}"`, 'ok');
+        else log('WARNING: No chapter markers found in output!', 'warn');
 
-        const stripped = normalized.length - cleanText.length;
-        if (stripped > 0) log(`Sanitized ${stripped} non-ASCII characters.`, 'warn');
-
-        const safeTitle = bookTitle.replace(/[^a-zA-Z0-9 \-_]/g,'').trim() || 'book';
+        const safeTitle = toAscii(bookTitle).replace(/[^a-zA-Z0-9 \-_]/g,'').trim() || 'book';
         fileName = safeTitle + '.txt';
 
         document.getElementById('fileInfoBox').innerHTML =
@@ -782,11 +766,12 @@ document.getElementById('fileInput').onchange = async (e) => {
         setStatus('Ready to send', 'ok');
         document.getElementById('uploadBtn').disabled = !bleDevice?.gatt?.connected;
         log(`Title: "${bookTitle}"${bookAuthor ? ' by ' + bookAuthor : ''}`, 'ok');
-        log(`${chapterCount} chapters, ${cleanText.length.toLocaleString()} characters`);
-        log(`Will send as: ${fileName}`);
+        log(`${chapterCount} chapters, ${cleanText.length.toLocaleString()} chars`);
+        log(`Sending as: ${fileName}`);
 
     } catch (err) {
         log(`Parse error: ${err.message}`, 'err');
+        console.error(err);
         setStatus('EPUB parsing failed', 'error');
         document.getElementById('fileInfoBox').innerHTML =
             `<span class="file-placeholder">Error reading file — check log</span>`;
@@ -796,7 +781,6 @@ document.getElementById('fileInput').onchange = async (e) => {
 // ── BLE Connection ─────────────────────────────────────────────────────────
 document.getElementById('bleConnectBtn').onclick = async () => {
     if (bleDevice?.gatt?.connected) { bleDevice.gatt.disconnect(); return; }
-
     if (!window.isSecureContext) {
         log('Page must be served over HTTPS for Web Bluetooth.', 'err');
         setStatus('HTTPS required', 'error'); return;
