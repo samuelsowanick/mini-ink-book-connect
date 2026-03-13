@@ -1064,33 +1064,37 @@ void buildPageIndex(int bookIdx) {
     char ch = f.read();
 
     if (ch == '\n') {
+      // Check for chapter marker on the completed logical line
       String trimmed = lineBuf;
       trimmed.trim();
       if (trimmed.startsWith("===") && trimmed.endsWith("===") && trimmed.length() > 6) {
         String name = trimmed.substring(3, trimmed.length() - 3);
         name.trim();
+        // Record chapter at the page it actually appears on
         if (name.length() > 0 && chapterCount < MAX_CHAPTERS)
           chapters[chapterCount++] = { name, totalPages - 1 };
       }
+      // FIX: clear lineBuf AND reset lineChars on newline (was missing lineChars reset)
       lineBuf   = "";
-    } else {
-      lineBuf += ch;
-    }
-
-    // Page-break accounting using READING font dimensions
-    if (ch == '\n') {
       lineChars = 0;
       lineCount++;
     } else {
+      lineBuf += ch;
       lineChars++;
       if (lineChars >= READ_CHARS_PER_LINE) {
+        // Soft word-wrap: a new display line, but NOT a new logical line.
+        // Do NOT clear lineBuf here — chapter marker detection needs the
+        // full logical line intact until the real newline arrives.
         lineChars = 0;
         lineCount++;
       }
     }
+
     if (lineCount >= READ_LINES_PER_PAGE) {
       pageOffsets[totalPages++] = f.position();
       lineCount = lineChars = 0;
+      // Do NOT clear lineBuf here: we may be mid-logical-line and need to
+      // keep accumulating until the next newline for chapter detection.
       yield(); // feed watchdog during long index builds
     }
   }
@@ -1106,8 +1110,12 @@ String getPageText(int bookIdx, int page) {
   File f = LittleFS.open(path, "r");
   if (!f) return "";
   f.seek(pageOffsets[page]);
-  // Read enough for one reading-font page with a small buffer
-  const int readAhead = READ_CHARS_PER_LINE * (READ_LINES_PER_PAGE + 4);
+  // Word-wrap discards up to ~(READ_CHARS_PER_LINE - avg_word_len) chars per
+  // line in the worst case. Using a 3× multiplier ensures wrapText() always
+  // has enough raw text to fill READ_LINES_PER_PAGE display lines, regardless
+  // of word lengths or embedded newlines. Without this, only 2-5 pages were
+  // ever shown because the buffer ran out before filling the screen.
+  const int readAhead = READ_CHARS_PER_LINE * (READ_LINES_PER_PAGE + 2) * 3;
   String text = ""; text.reserve(readAhead);
   int count = 0;
   while (f.available() && count++ < readAhead) text += (char)f.read();
